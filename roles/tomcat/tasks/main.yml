@@ -1,0 +1,94 @@
+---
+# roles/tomcat/tasks/main.yml
+# Apache Tomcat 角色主任务：根据安装方式与架构模式调度子任务
+# 支持的安装方式: binary, docker
+# 支持的架构: standalone, cluster
+
+- name: 设置默认变量（避免未定义错误）
+  ansible.builtin.set_fact:
+    tomcat_install_method: "{{ tomcat_install_method | default(install_method) }}"
+    tomcat_architecture: "{{ tomcat_architecture | default('standalone') }}"
+  tags: always
+
+- name: 包含系统调优角色
+  ansible.builtin.include_role:
+    name: common
+  when: tomcat_include_system_tuning | default(true) | bool
+  tags:
+    - tuning
+    - common
+
+- name: 验证安装方式
+  ansible.builtin.fail:
+    msg: "不支持的 Tomcat 安装方式: {{ tomcat_install_method }}"
+  when: tomcat_install_method not in ['binary', 'docker']
+
+- name: 验证架构模式
+  ansible.builtin.fail:
+    msg: "不支持的 Tomcat 架构模式: {{ tomcat_architecture }}"
+  when: tomcat_architecture not in ['standalone', 'cluster']
+
+- name: 开放 Tomcat HTTP 端口 (RedHat firewalld)
+  ansible.posix.firewalld:
+    port: "{{ tomcat_http_port }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  when:
+    - ansible_os_family == "RedHat"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+  tags: firewall
+
+- name: 开放 Tomcat HTTP 端口 (Debian ufw)
+  community.general.ufw:
+    rule: allow
+    port: "{{ tomcat_http_port }}"
+    proto: tcp
+  when:
+    - ansible_os_family == "Debian"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+  tags: firewall
+
+- name: 开放 Tomcat AJP 端口 (RedHat)（可选）
+  ansible.posix.firewalld:
+    port: "{{ tomcat_ajp_port }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  when:
+    - tomcat_ajp_enabled | default(false) | bool
+    - ansible_os_family == "RedHat"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+  tags: firewall
+
+- name: 开放 Tomcat AJP 端口 (Debian)（可选）
+  community.general.ufw:
+    rule: allow
+    port: "{{ tomcat_ajp_port }}"
+    proto: tcp
+  when:
+    - tomcat_ajp_enabled | default(false) | bool
+    - ansible_os_family == "Debian"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+  tags: firewall
+
+- name: 根据安装方式执行安装
+  ansible.builtin.include_tasks: "{{ tomcat_install_method }}_install.yml"
+  tags: install
+
+- name: 根据架构模式执行配置
+  ansible.builtin.include_tasks: "{{ tomcat_architecture }}.yml"
+  tags: config
+
+- name: 启动并启用 Tomcat 服务（systemd 托管方式）
+  ansible.builtin.systemd:
+    name: tomcat
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: tomcat_install_method == 'binary'
+  tags: service

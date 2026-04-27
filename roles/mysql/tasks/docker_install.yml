@@ -1,0 +1,93 @@
+---
+# roles/mysql/tasks/docker_install.yml
+# MySQL Docker 安装方式：拉取镜像、创建目录、运行容器
+
+- name: 安装 Docker（如果未安装）
+  include_tasks: install_docker.yml
+  when: docker_installed is not defined or not docker_installed
+
+- name: 创建 MySQL 数据目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ mysql_datadir }}"
+    state: directory
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 MySQL 日志目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ mysql_logdir }}"
+    state: directory
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 MySQL 配置目录（宿主机）
+  ansible.builtin.file:
+    path: /etc/mysql
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 MySQL 配置文件（挂载进容器）
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: /etc/mysql/my.cnf
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: 登录私有镜像仓库（可选）
+  community.docker.docker_login:
+    registry_url: "{{ docker_registry_url | default(omit) }}"
+    username: "{{ docker_registry_username | default(omit) }}"
+    password: "{{ docker_registry_password | default(omit) }}"
+  when: docker_registry_url is defined and docker_registry_username is defined
+  no_log: true
+
+- name: 拉取 MySQL Docker 镜像
+  community.docker.docker_image:
+    name: "{{ mysql_docker_image }}"
+    source: pull
+    tag: "{{ mysql_docker_image_tag | default(omit) }}"
+    force_source: "{{ mysql_docker_force_pull | default(false) }}"
+  register: image_pull_result
+
+- name: 运行 MySQL 容器
+  community.docker.docker_container:
+    name: mysql
+    image: "{{ mysql_docker_image }}"
+    state: started
+    restart_policy: always
+    container_default_behavior: no_defaults
+    networks:
+      - name: bridge
+    ports:
+      - "{{ mysql_port }}:3306"
+    volumes:
+      - "{{ mysql_datadir }}:/var/lib/mysql"
+      - /etc/mysql/my.cnf:/etc/mysql/my.cnf:ro
+      - "{{ mysql_logdir }}:/var/log/mysql"
+    env:
+      MYSQL_ROOT_PASSWORD: "{{ mysql_root_password }}"
+      MYSQL_DATABASE: "{{ mysql_database | default(omit) }}"
+      MYSQL_USER: "{{ mysql_user | default(omit) }}"
+      MYSQL_PASSWORD: "{{ mysql_password | default(omit) }}"
+      TZ: "{{ timezone | default('Asia/Shanghai') }}"
+    user: "999:999"   # MySQL 官方镜像默认使用 mysql 用户 (uid 999)
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p{{ mysql_root_password }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  notify: restart docker mysql
+
+- name: 等待 MySQL 容器健康检查通过
+  ansible.builtin.command: docker exec mysql mysqladmin ping -h localhost -u root -p{{ mysql_root_password }}
+  register: mysql_ping
+  changed_when: false
+  retries: 20
+  delay: 5
+  until: mysql_ping.rc == 0 and "mysqld is alive" in mysql_ping.stdout
+  tags: verify

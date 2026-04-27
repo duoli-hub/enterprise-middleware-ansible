@@ -1,0 +1,20 @@
+---
+# ============================================================
+# Nginx 部署 Playbook
+# 支持 standalone、load_balancer、keepalived_ha 架构
+# 执行: ./deploy.sh nginx [--arch <架构>] [--method <安装方式>]
+# ============================================================
+
+- name: 部署 Nginx 节点
+  hosts: nginx
+  become: true
+  gather_facts: true
+  vars:
+    nginx_architecture: "{{ nginx_architecture | default('standalone') }}"
+    nginx_install_method: "{{ nginx_install_method | default(install_method) }}"
+  roles:
+    - role: nginx
+  tags:
+    - nginx
+    - install
+    - config

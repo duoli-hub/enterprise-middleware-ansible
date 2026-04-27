@@ -1,0 +1,45 @@
+# {{ ansible_managed }}
+# Nginx 默认站点配置 - 由 Ansible 管理
+
+server {
+    listen       {{ nginx_listen_port }};
+    listen       [::]:{{ nginx_listen_port }};
+    {% if nginx_ssl_enabled | default(false) %}
+    listen       {{ nginx_listen_ssl_port }} ssl http2;
+    listen       [::]:{{ nginx_listen_ssl_port }} ssl http2;
+    {% endif %}
+    server_name  {{ nginx_server_name | default('_') }};
+    root         {{ nginx_web_root | default('/usr/share/nginx/html') }};
+
+    {% if nginx_ssl_enabled | default(false) %}
+    ssl_certificate     {{ nginx_ssl_certificate }};
+    ssl_certificate_key {{ nginx_ssl_certificate_key }};
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    {% endif %}
+
+    access_log  {{ nginx_log_dir }}/default.access.log main;
+    error_log   {{ nginx_log_dir }}/default.error.log;
+
+    location / {
+        index  index.html index.htm;
+        try_files $uri $uri/ =404;
+    }
+
+    # 反向代理模板（可通过变量启用）
+    {% if nginx_proxy_pass is defined and nginx_proxy_pass %}
+    location /api/ {
+        proxy_pass {{ nginx_proxy_pass }};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    {% endif %}
+
+    # 错误页
+    error_page  500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
+}

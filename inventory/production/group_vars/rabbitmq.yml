@@ -1,0 +1,107 @@
+# ============================================================
+# RabbitMQ 部署变量
+# ============================================================
+
+# --- 版本 ---
+rabbitmq_version: "3.12.12"
+
+# --- 安装方式（覆盖全局 install_method） ---
+# 可选值: package | docker | docker_compose
+rabbitmq_install_method: "{{ install_method }}"
+
+# --- 架构模式 ---
+# 可选值: standalone | cluster
+rabbitmq_architecture: "cluster"
+
+# --- 端口 ---
+rabbitmq_amqp_port: 5672          # AMQP 0-9-1 协议
+rabbitmq_management_port: 15672   # 管理控制台 HTTP
+rabbitmq_stream_port: 5552        # Stream 核心端口
+rabbitmq_epmd_port: 4369          # EPMD 发现
+rabbitmq_dist_port_range: "25672-25682"  # 节点间通信端口范围
+
+# --- 路径 ---
+rabbitmq_data_dir: "{{ base_data_dir }}/rabbitmq"
+rabbitmq_log_dir: "{{ base_log_dir }}/rabbitmq"
+
+# --- 运行用户 ---
+rabbitmq_user: "{{ middleware_user }}"
+rabbitmq_group: "{{ middleware_group }}"
+
+# --- Erlang Cookie（集群通信密钥） ---
+rabbitmq_erlang_cookie: "{{ vault_rabbitmq_erlang_cookie | default('YOUR_ERLANG_COOKIE') }}"
+
+# --- 管理员账号（生产建议通过 vault 覆盖） ---
+rabbitmq_admin_user: "admin"
+rabbitmq_admin_password: "{{ vault_rabbitmq_admin_password }}"
+
+# --- 虚拟主机与权限 ---
+rabbitmq_default_vhost: "/"
+rabbitmq_vhosts: []
+#  - name: "production"
+#    state: present
+
+# --- 用户列表（除 admin 外可创建更多） ---
+rabbitmq_users: []
+#  - name: "app_user"
+#    password: "{{ vault_rabbitmq_app_password }}"
+#    tags: "administrator"
+#    vhost: "/"
+#    configure_priv: ".*"
+#    read_priv: ".*"
+#    write_priv: ".*"
+
+# --- 策略（Policy） ---
+rabbitmq_policies:
+  - name: "ha-all"
+    pattern: ".*"
+    tags:
+      ha-mode: "all"
+      ha-sync-mode: "automatic"
+
+# --- 全局参数 ---
+# rabbitmq_global_parameters:
+#   - name: "cluster_name"
+#     value: "{{ rabbitmq_cluster_name | default('default-cluster') }}"
+
+# --- 资源限制（内存/磁盘） ---
+rabbitmq_vm_memory_high_watermark_relative: 0.6     # 使用系统内存的 60%
+rabbitmq_disk_free_limit_absolute: "2GB"            # 磁盘空闲小于此值暂停接收消息
+
+# --- 持久化与可靠性 ---
+rabbitmq_queue_master_locator: "client-local"       # 队列主副本分配策略
+
+# --- 管理插件 ---
+rabbitmq_plugins:
+  - rabbitmq_management
+  - rabbitmq_management_agent
+  - rabbitmq_prometheus          # 金融级监控推荐开启
+  - rabbitmq_federation
+  - rabbitmq_stream
+  - rabbitmq_stream_management
+
+# --- 日志 ---
+rabbitmq_log_level: "info"
+rabbitmq_log_file: "{{ rabbitmq_log_dir }}/rabbitmq.log"
+
+# --- 集群特定设置 ---
+# 集群节点发现列表（自动从 inventory 生成，此处可覆盖）
+# rabbitmq_cluster_nodes:
+#   - "rabbit@rabbitmq-01"
+#   - "rabbit@rabbitmq-02"
+#   - "rabbit@rabbitmq-03"
+rabbitmq_cluster_name: "{{ rabbitmq_cluster_name | default('rabbitmq-production-cluster') }}"
+
+# --- Linux 参数调优 ---
+rabbitmq_open_file_limit: 100000
+rabbitmq_max_sockets: 8292
+rabbitmq_num_tcp_acceptors: 10
+
+# --- Docker 镜像 ---
+rabbitmq_docker_image: "rabbitmq:{{ rabbitmq_version }}-management-alpine"
+
+# --- Docker Compose 专用 ---
+rabbitmq_docker_compose_dir: "{{ base_install_dir }}/rabbitmq-compose"
+
+# --- 是否包含系统调优 ---
+rabbitmq_include_system_tuning: true

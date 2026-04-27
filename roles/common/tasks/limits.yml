@@ -1,0 +1,36 @@
+---
+# roles/common/tasks/limits.yml
+# 文件描述符与进程数限制调优
+# 通过 limits.d 片段配置，避免直接修改 /etc/security/limits.conf
+
+- name: 部署 limits.d 配置文件
+  ansible.builtin.template:
+    src: limits.conf.j2
+    dest: /etc/security/limits.d/99-middleware.conf
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - limits
+    - security
+
+- name: 确保 /etc/pam.d/common-session 包含 pam_limits.so
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/common-session
+    line: "session    required     pam_limits.so"
+    state: present
+    create: yes
+  when: ansible_os_family == "Debian"
+  tags:
+    - limits
+    - pam
+
+- name: 检查 /etc/pam.d/system-auth 是否已加载 pam_limits.so (RedHat)
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/system-auth
+    line: "session     required      pam_limits.so"
+    state: present
+  when: ansible_os_family == "RedHat"
+  tags:
+    - limits
+    - pam

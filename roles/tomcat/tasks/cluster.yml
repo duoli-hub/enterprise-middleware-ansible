@@ -1,0 +1,63 @@
+---
+# roles/tomcat/tasks/cluster.yml
+# Apache Tomcat 集群架构配置
+# 适用于 tomcat_architecture == 'cluster'
+# 配置 Tomcat 集群会话复制、容错及负载均衡参数
+
+- name: 验证集群节点数量
+  ansible.builtin.fail:
+    msg: "Tomcat 集群至少需要 2 个节点，当前定义了 {{ groups['tomcat'] | length }} 个"
+  when: groups['tomcat'] | length < 2
+
+- name: 确保 Tomcat 配置目录存在
+  ansible.builtin.file:
+    path: "{{ tomcat_install_dir }}/conf"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0755"
+
+- name: 生成 Tomcat server.xml 配置文件（集群模式）
+  ansible.builtin.template:
+    src: server.xml.j2
+    dest: "{{ tomcat_install_dir }}/conf/server.xml"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0640"
+  notify: restart tomcat
+
+- name: 生成 setenv.sh（JVM 及集群相关 GC 参数）
+  ansible.builtin.template:
+    src: setenv.sh.j2
+    dest: "{{ tomcat_install_dir }}/bin/setenv.sh"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0750"
+  notify: restart tomcat
+
+- name: 生成集群会话复制所需的 context.xml（可选）
+  ansible.builtin.template:
+    src: context.xml.j2
+    dest: "{{ tomcat_install_dir }}/conf/context.xml"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0640"
+  when: tomcat_cluster_session_replication | default(true) | bool
+  notify: restart tomcat
+
+- name: 启动并启用 Tomcat 服务（仅二进制安装）
+  ansible.builtin.systemd:
+    name: tomcat
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: tomcat_install_method == 'binary'
+
+- name: 等待所有节点端口就绪
+  ansible.builtin.wait_for:
+    host: "{{ hostvars[item]['ansible_host'] }}"
+    port: "{{ tomcat_http_port }}"
+    state: started
+    timeout: 120
+  loop: "{{ groups['tomcat'] }}"
+  when: tomcat_install_method == 'binary'

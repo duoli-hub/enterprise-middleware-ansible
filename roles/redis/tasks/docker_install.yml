@@ -1,0 +1,76 @@
+---
+# roles/redis/tasks/docker_install.yml
+# Redis Docker 安装方式：拉取镜像、创建目录、运行容器
+
+- name: 安装 Docker（如果未安装）
+  include_tasks: install_docker.yml
+  when: docker_installed is not defined or not docker_installed
+
+- name: 创建 Redis 数据目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ redis_data_dir | default(base_data_dir + '/redis') }}"
+    state: directory
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 Redis 配置目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ redis_conf_dir | default('/etc/redis') }}"
+    state: directory
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 生成 Redis 配置文件（挂载进容器）
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: "{{ redis_conf_dir | default('/etc/redis') }}/redis.conf"
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0640"
+
+- name: 登录私有镜像仓库（可选）
+  community.docker.docker_login:
+    registry_url: "{{ docker_registry_url | default(omit) }}"
+    username: "{{ docker_registry_username | default(omit) }}"
+    password: "{{ docker_registry_password | default(omit) }}"
+  when: docker_registry_url is defined and docker_registry_username is defined
+  no_log: true
+
+- name: 拉取 Redis Docker 镜像
+  community.docker.docker_image:
+    name: "{{ redis_docker_image }}"
+    source: pull
+    tag: "{{ redis_docker_image_tag | default(omit) }}"
+    force_source: "{{ redis_docker_force_pull | default(false) }}"
+  register: image_pull_result
+
+- name: 运行 Redis 容器
+  community.docker.docker_container:
+    name: redis
+    image: "{{ redis_docker_image }}"
+    state: started
+    restart_policy: always
+    container_default_behavior: no_defaults
+    networks:
+      - name: bridge
+    ports:
+      - "{{ redis_port }}:6379"
+    volumes:
+      - "{{ redis_data_dir | default(base_data_dir + '/redis') }}:/data"
+      - "{{ redis_conf_dir | default('/etc/redis') }}/redis.conf:/usr/local/etc/redis/redis.conf:ro"
+    command: redis-server /usr/local/etc/redis/redis.conf
+    user: "999:999"                      # Redis 官方镜像默认使用 redis 用户 (uid 999)
+    env:
+      TZ: "{{ timezone | default('Asia/Shanghai') }}"
+  notify: restart docker redis
+
+- name: 等待 Redis 容器健康检查通过
+  ansible.builtin.command: docker exec redis redis-cli ping
+  register: redis_ping
+  changed_when: false
+  retries: 10
+  delay: 3
+  until: redis_ping.rc == 0 and redis_ping.stdout == "PONG"
+  tags: verify

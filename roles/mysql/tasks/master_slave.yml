@@ -1,0 +1,125 @@
+---
+# roles/mysql/tasks/master_slave.yml
+# MySQL 主从复制架构配置
+# 使用 GTID 方式自动建立复制关系（推荐）
+# 仅在 mysql_master 和 mysql_slave 组内执行对应任务
+
+- name: 确保主从组均已定义
+  ansible.builtin.fail:
+    msg: "主从架构需要定义 mysql_master 和 mysql_slave 组"
+  when: groups['mysql_master'] | default([]) | length == 0 or groups['mysql_slave'] | default([]) | length == 0
+
+# ============================
+# 主库配置
+# ============================
+- name: 主库 - 生成 MySQL 配置文件
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: /etc/my.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  when: "'mysql_master' in group_names"
+  notify: restart mysql
+
+- name: 主库 - 确保 mysqld 正在运行
+  ansible.builtin.systemd:
+    name: "{{ 'mysqld' if ansible_os_family == 'RedHat' or mysql_install_method == 'binary' else 'mysql' }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: "'mysql_master' in group_names and mysql_install_method in ['binary', 'package']"
+
+- name: 主库 - 等待 MySQL 端口就绪
+  ansible.builtin.wait_for:
+    port: "{{ mysql_port }}"
+    state: started
+    timeout: 60
+  when: "'mysql_master' in group_names"
+
+- name: 主库 - 创建复制用户
+  community.mysql.mysql_user:
+    name: "{{ mysql_repl_user }}"
+    host: "%"
+    password: "{{ mysql_repl_password }}"
+    priv: "*.*:REPLICATION SLAVE,REPLICATION CLIENT"
+    state: present
+    login_unix_socket: "{{ mysql_socket | default('/var/run/mysqld/mysqld.sock') }}"
+  when: "'mysql_master' in group_names"
+  no_log: true
+
+# =============================
+# 从库配置
+# =============================
+- name: 从库 - 生成 MySQL 配置文件
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: /etc/my.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  when: "'mysql_slave' in group_names"
+  notify: restart mysql
+
+- name: 从库 - 确保 mysqld 正在运行
+  ansible.builtin.systemd:
+    name: "{{ 'mysqld' if ansible_os_family == 'RedHat' or mysql_install_method == 'binary' else 'mysql' }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: "'mysql_slave' in group_names and mysql_install_method in ['binary', 'package']"
+
+- name: 从库 - 等待 MySQL 端口就绪
+  ansible.builtin.wait_for:
+    port: "{{ mysql_port }}"
+    state: started
+    timeout: 60
+  when: "'mysql_slave' in group_names"
+
+- name: 从库 - 验证主库复制用户可达（从从库测试连接）
+  ansible.builtin.shell: |
+    mysql -u {{ mysql_repl_user }} -p{{ mysql_repl_password }} -h {{ hostvars[groups['mysql_master'][0]]['ansible_host'] }} -P {{ mysql_port }} -e "SELECT 1"
+  register: repl_conn_test
+  changed_when: false
+  failed_when: repl_conn_test.rc != 0
+  when: "'mysql_slave' in group_names"
+  no_log: true
+
+- name: 从库 - 配置 GTID 复制（CHANGE MASTER TO）
+  community.mysql.mysql_replication:
+    mode: changemaster
+    master_host: "{{ hostvars[groups['mysql_master'][0]]['ansible_host'] }}"
+    master_port: "{{ mysql_port }}"
+    master_user: "{{ mysql_repl_user }}"
+    master_password: "{{ mysql_repl_password }}"
+    master_auto_position: yes            # 使用 GTID 自动定位
+    login_unix_socket: "{{ mysql_socket | default('/var/run/mysqld/mysqld.sock') }}"
+  when: "'mysql_slave' in group_names"
+  no_log: true
+
+- name: 从库 - 启动复制
+  community.mysql.mysql_replication:
+    mode: startslave
+    login_unix_socket: "{{ mysql_socket | default('/var/run/mysqld/mysqld.sock') }}"
+  when: "'mysql_slave' in group_names"
+
+- name: 从库 - 将从库设置为只读
+  community.mysql.mysql_variables:
+    variable: read_only
+    value: 1
+    login_unix_socket: "{{ mysql_socket | default('/var/run/mysqld/mysqld.sock') }}"
+  when: "'mysql_slave' in group_names"
+
+- name: 从库 - 检查复制状态
+  ansible.builtin.shell: >
+    mysql -e "SHOW SLAVE STATUS\G" |
+    grep -E "Slave_IO_Running|Slave_SQL_Running" |
+    awk '{print $2}'
+  register: slave_status
+  changed_when: false
+  until:
+    - slave_status.stdout_lines[0] == "Yes"
+    - slave_status.stdout_lines[1] == "Yes"
+  retries: 12
+  delay: 5
+  when: "'mysql_slave' in group_names"

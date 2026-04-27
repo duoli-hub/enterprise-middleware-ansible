@@ -1,0 +1,66 @@
+---
+# roles/zookeeper/tasks/binary_install.yml
+# Apache ZooKeeper 二进制安装：下载 → 解压 → 目录准备 → 环境变量
+
+- name: 设置 ZooKeeper 归档文件名
+  ansible.builtin.set_fact:
+    zookeeper_basename: "apache-zookeeper-{{ zookeeper_version }}-bin"
+
+- name: 下载 ZooKeeper 二进制包（在线模式）
+  ansible.builtin.get_url:
+    url: "{{ zookeeper_download_url | default('https://downloads.apache.org/zookeeper/zookeeper-' + zookeeper_version + '/' + zookeeper_basename + '.tar.gz') }}"
+    dest: "/tmp/{{ zookeeper_basename }}.tar.gz"
+    mode: "0644"
+    checksum: "{{ zookeeper_binary_checksum | default(omit) }}"
+  when: install_mode == "online"
+
+- name: 复制本地离线包（离线模式）
+  ansible.builtin.copy:
+    src: "{{ zookeeper_offline_package | default(playbook_dir + '/files/' + zookeeper_basename + '.tar.gz') }}"
+    dest: "/tmp/{{ zookeeper_basename }}.tar.gz"
+    mode: "0644"
+  when: install_mode == "offline"
+
+- name: 创建 ZooKeeper 安装目录
+  ansible.builtin.file:
+    path: "{{ zookeeper_install_dir | default(base_install_dir + '/zookeeper') }}"
+    state: directory
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0755"
+
+- name: 解压 ZooKeeper 二进制包
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ zookeeper_basename }}.tar.gz"
+    dest: "{{ zookeeper_install_dir | default(base_install_dir + '/zookeeper') }}"
+    remote_src: true
+    creates: "{{ zookeeper_install_dir | default(base_install_dir + '/zookeeper') }}/bin/zkServer.sh"
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    extra_opts:
+      - --strip-components=1
+  notify: restart zookeeper
+
+- name: 创建 ZooKeeper 数据目录
+  ansible.builtin.file:
+    path: "{{ zookeeper_data_dir }}"
+    state: directory
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0750"
+
+- name: 创建 ZooKeeper 日志目录
+  ansible.builtin.file:
+    path: "{{ zookeeper_log_dir }}"
+    state: directory
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0750"
+
+- name: 将 ZooKeeper 二进制路径加入系统 PATH
+  ansible.builtin.copy:
+    dest: /etc/profile.d/zookeeper.sh
+    content: |
+      export PATH=$PATH:{{ zookeeper_install_dir | default(base_install_dir + '/zookeeper') }}/bin
+    mode: "0644"
+  when: zookeeper_update_path | default(true) | bool

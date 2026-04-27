@@ -1,0 +1,40 @@
+---
+# ============================================================
+# 一键部署全部中间件 Playbook
+# 按建议的依赖顺序依次执行各中间件部署
+# 执行: ansible-playbook -i inventory/production/hosts.ini playbooks/deploy_all.yml
+# ============================================================
+
+- name: 系统调优（所有主机）
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - common
+
+- name: 部署 Apache ZooKeeper 集群
+  import_playbook: deploy_zookeeper.yml
+
+- name: 部署 Apache Kafka 集群
+  import_playbook: deploy_kafka.yml
+
+- name: 部署 Redis 高可用集群
+  import_playbook: deploy_redis.yml
+
+- name: 部署 MySQL 高可用集群
+  import_playbook: deploy_mysql.yml
+
+- name: 部署 Apache RocketMQ 集群
+  import_playbook: deploy_rocketmq.yml
+
+- name: 部署 RabbitMQ 集群
+  import_playbook: deploy_rabbitmq.yml
+
+- name: 部署 Nginx 负载均衡
+  import_playbook: deploy_nginx.yml
+
+- name: 部署 Apache Tomcat 集群
+  import_playbook: deploy_tomcat.yml
+
+- name: 部署 Elasticsearch 集群
+  import_playbook: deploy_elasticsearch.yml

@@ -1,0 +1,20 @@
+---
+# roles/kafka/handlers/main.yml
+# Apache Kafka 服务处理器：重启、重载等动作
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart kafka
+  ansible.builtin.systemd:
+    name: kafka
+    state: restarted
+    daemon_reload: true
+  when: kafka_install_method == 'binary'
+
+- name: restart docker kafka
+  community.docker.docker_container:
+    name: kafka
+    state: restarted
+  when: kafka_install_method == 'docker'

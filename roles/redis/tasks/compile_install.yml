@@ -1,0 +1,130 @@
+---
+# roles/redis/tasks/compile_install.yml
+# Redis 源码编译安装（支持自定义编译参数、在线/离线）
+# 产生完全由本机编译的二进制文件，适用于需要开启特定功能（如 TLS）的场景
+
+- name: 检测操作系统架构（用于设置编译选项）
+  ansible.builtin.set_fact:
+    redis_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'x86_64' }}"
+
+- name: 安装编译依赖 - RedHat 系
+  ansible.builtin.yum:
+    name:
+      - gcc
+      - gcc-c++
+      - make
+      - tcl
+      - systemd-devel
+      - openssl-devel                    # 编译 TLS 支持所需
+    state: present
+    update_cache: true
+  when: ansible_os_family == "RedHat"
+
+- name: 安装编译依赖 - Debian 系
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - tcl
+      - libsystemd-dev
+      - libssl-dev
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+- name: 下载 Redis 源码包（在线模式）
+  ansible.builtin.get_url:
+    url: "https://download.redis.io/releases/redis-{{ redis_version }}.tar.gz"
+    dest: "/tmp/redis-{{ redis_version }}.tar.gz"
+    mode: "0644"
+    checksum: "{{ redis_source_checksum | default(omit) }}"
+  when: install_mode == "online"
+  register: redis_source_download
+
+- name: 复制本地源码包（离线模式）
+  ansible.builtin.copy:
+    src: "{{ redis_offline_source | default(playbook_dir + '/files/redis-' + redis_version + '.tar.gz') }}"
+    dest: "/tmp/redis-{{ redis_version }}.tar.gz"
+    mode: "0644"
+  when: install_mode == "offline"
+
+- name: 解压 Redis 源码
+  ansible.builtin.unarchive:
+    src: "/tmp/redis-{{ redis_version }}.tar.gz"
+    dest: "/tmp"
+    remote_src: true
+    creates: "/tmp/redis-{{ redis_version }}/Makefile"
+
+- name: 编译 Redis
+  ansible.builtin.make:
+    chdir: "/tmp/redis-{{ redis_version }}"
+    jobs: "{{ redis_compile_jobs | default(ansible_processor_cores) }}"
+    params:
+      USE_SYSTEMD: "yes"
+      BUILD_TLS: "{{ 'yes' if redis_compile_build_tls | default(false) | bool else 'no' }}"
+  register: redis_make_result
+
+- name: 运行 Redis 测试（可选，耗时较长）
+  ansible.builtin.make:
+    chdir: "/tmp/redis-{{ redis_version }}"
+    target: test
+  when: redis_run_tests | default(false) | bool
+  tags: test
+
+- name: 安装 Redis 到目标目录
+  ansible.builtin.make:
+    chdir: "/tmp/redis-{{ redis_version }}"
+    target: install
+    params:
+      PREFIX: "{{ redis_install_dir | default(base_install_dir + '/redis') }}"
+  notify: restart redis
+
+- name: 将 Redis 二进制路径加入全局 PATH
+  ansible.builtin.copy:
+    dest: /etc/profile.d/redis.sh
+    content: |
+      export PATH=$PATH:{{ redis_install_dir | default(base_install_dir + '/redis') }}/bin
+    mode: "0644"
+
+- name: 创建 Redis 数据目录
+  ansible.builtin.file:
+    path: "{{ redis_data_dir | default(base_data_dir + '/redis') }}"
+    state: directory
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 Redis 日志目录
+  ansible.builtin.file:
+    path: "{{ redis_log_dir | default(base_log_dir + '/redis') }}"
+    state: directory
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 Redis 运行时目录
+  ansible.builtin.file:
+    path: /var/run/redis
+    state: directory
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 部署 Redis 配置文件
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: /etc/redis/redis.conf
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0640"
+  notify: restart redis
+
+- name: 部署 Redis systemd 服务文件
+  ansible.builtin.template:
+    src: redis.service.j2
+    dest: /etc/systemd/system/redis.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart redis

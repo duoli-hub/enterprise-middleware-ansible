@@ -1,0 +1,148 @@
+---
+# roles/rabbitmq/tasks/cluster.yml
+# RabbitMQ 集群架构配置
+# 适用于 rabbitmq_architecture == 'cluster'
+# 负责同步 Erlang Cookie、加入集群、设置高可用策略等
+
+- name: 验证集群节点数量
+  ansible.builtin.fail:
+    msg: "RabbitMQ 集群至少需要 2 个节点，当前定义 {{ groups['rabbitmq'] | length }} 个"
+  when: groups['rabbitmq'] | length < 2
+
+- name: 设置 RabbitMQ Erlang Cookie（所有节点）
+  ansible.builtin.copy:
+    content: "{{ rabbitmq_erlang_cookie }}"
+    dest: "{{ rabbitmq_erlang_cookie_file | default('/var/lib/rabbitmq/.erlang.cookie') }}"
+    owner: rabbitmq
+    group: rabbitmq
+    mode: "0400"
+  when: rabbitmq_erlang_cookie is defined
+  notify: restart rabbitmq
+  tags:
+    - cookie
+
+- name: 等待所有节点 RabbitMQ 管理端口就绪
+  ansible.builtin.wait_for:
+    host: "{{ hostvars[item]['ansible_host'] }}"
+    port: "{{ rabbitmq_management_port }}"
+    state: started
+    timeout: 120
+    delay: 5
+  loop: "{{ groups['rabbitmq'] }}"
+  when: rabbitmq_install_method == 'package'
+  tags:
+    - cluster_join
+
+# 除第一个节点外，其余节点需要加入集群
+- name: 将本节点加入 RabbitMQ 集群（除集群第一个节点外）
+  ansible.builtin.shell: |
+    rabbitmqctl stop_app
+    rabbitmqctl join_cluster {{ 'rabbit@' + hostvars[item]['ansible_hostname'] | default('rabbit@' + hostvars[item]['inventory_hostname']) }}
+    rabbitmqctl start_app
+  when:
+    - inventory_hostname != groups['rabbitmq'][0]   # 跳过第一个节点
+    - rabbitmq_install_method == 'package'
+  register: join_result
+  changed_when: "'already a member' not in join_result.stderr"
+  notify:
+    - restart rabbitmq
+
+- name: 等待集群状态正常
+  ansible.builtin.shell: rabbitmqctl cluster_status
+  register: cluster_status
+  changed_when: false
+  retries: 10
+  delay: 10
+  until: >
+    cluster_status.stdout | regex_search('{{ hostvars[item]["ansible_hostname"] | default(hostvars[item]["inventory_hostname"]) }}')
+
+# ---------- 安全与用户管理（仅在第一个节点执行） ----------
+- name: 删除默认 guest 用户（第一个节点）
+  community.rabbitmq.rabbitmq_user:
+    user: guest
+    state: absent
+  run_once: true
+  when:
+    - rabbitmq_install_method == 'package'
+    - rabbitmq_remove_guest | default(true) | bool
+
+- name: 创建 RabbitMQ 管理员用户（第一个节点）
+  community.rabbitmq.rabbitmq_user:
+    user: "{{ rabbitmq_admin_user }}"
+    password: "{{ rabbitmq_admin_password }}"
+    tags: administrator
+    state: present
+    update_password: always
+  run_once: true
+  when:
+    - rabbitmq_install_method == 'package'
+    - rabbitmq_admin_user is defined
+    - rabbitmq_admin_password is defined
+
+- name: 创建其他自定义用户（第一个节点）
+  community.rabbitmq.rabbitmq_user:
+    user: "{{ item.name }}"
+    password: "{{ item.password }}"
+    tags: "{{ item.tags | default('') }}"
+    state: present
+    update_password: always
+  loop: "{{ rabbitmq_users | default([]) }}"
+  run_once: true
+  when: rabbitmq_install_method == 'package'
+
+# ---------- 虚拟主机与权限 ----------
+- name: 创建虚拟主机
+  community.rabbitmq.rabbitmq_vhost:
+    name: "{{ item.name }}"
+    state: "{{ item.state | default('present') }}"
+  loop: "{{ rabbitmq_vhosts | default([{ 'name': '/' }]) }}"
+  run_once: true
+  when: rabbitmq_install_method == 'package'
+
+- name: 分配管理员对虚拟主机的完全访问权限
+  community.rabbitmq.rabbitmq_user_permissions:
+    user: "{{ rabbitmq_admin_user }}"
+    vhost: "{{ item.name }}"
+    configure_priv: ".*"
+    read_priv: ".*"
+    write_priv: ".*"
+    state: present
+  loop: "{{ rabbitmq_vhosts | default([{ 'name': '/' }]) }}"
+  run_once: true
+  when:
+    - rabbitmq_install_method == 'package'
+    - rabbitmq_admin_user is defined
+
+- name: 分配自定义用户权限
+  community.rabbitmq.rabbitmq_user_permissions:
+    user: "{{ item.user }}"
+    vhost: "{{ item.vhost | default('/') }}"
+    configure_priv: "{{ item.configure_priv | default('.*') }}"
+    read_priv: "{{ item.read_priv | default('.*') }}"
+    write_priv: "{{ item.write_priv | default('.*') }}"
+    state: present
+  loop: "{{ rabbitmq_user_permissions | default([]) }}"
+  run_once: true
+  when: rabbitmq_install_method == 'package'
+
+# ---------- 策略 ----------
+- name: 应用集群策略（如高可用）
+  community.rabbitmq.rabbitmq_policy:
+    name: "{{ item.name }}"
+    pattern: "{{ item.pattern }}"
+    tags: "{{ item.tags }}"
+    priority: "{{ item.priority | default(0) }}"
+    state: present
+  loop: "{{ rabbitmq_policies | default([]) }}"
+  run_once: true
+  when: rabbitmq_install_method == 'package'
+
+# ---------- 全局参数（可选） ----------
+- name: 设置全局参数
+  community.rabbitmq.rabbitmq_global_parameter:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+  loop: "{{ rabbitmq_global_parameters | default([]) }}"
+  run_once: true
+  when: rabbitmq_install_method == 'package'

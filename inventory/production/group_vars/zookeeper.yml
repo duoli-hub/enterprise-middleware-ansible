@@ -1,0 +1,65 @@
+# ============================================================
+# Apache ZooKeeper 部署变量
+# ============================================================
+
+# --- 版本 ---
+zookeeper_version: "3.9.1"
+
+# --- 安装方式（覆盖全局 install_method） ---
+# 可选值: binary | docker
+zookeeper_install_method: "{{ install_method }}"
+
+# --- 架构模式 ---
+# 可选值: standalone | cluster
+zookeeper_architecture: "cluster"
+
+# --- 端口 ---
+zookeeper_client_port: 2181      # 客户端连接端口
+zookeeper_peer_port: 2888        # 集群内部通信（Follower 连接 Leader）
+zookeeper_leader_port: 3888      # Leader 选举
+
+# --- 路径 ---
+zookeeper_data_dir: "{{ base_data_dir }}/zookeeper"
+zookeeper_log_dir: "{{ base_log_dir }}/zookeeper"
+
+# --- 节点 ID（从主机变量 zk_id 获取，也可自动生成） ---
+zookeeper_id: "{{ zk_id | default(1) }}"
+
+# --- 节点列表（自动从 inventory 生成集群配置） ---
+zookeeper_servers: >-
+  {%- for host in groups['zookeeper'] -%}
+  server.{{ hostvars[host].zk_id | default(loop.index) }}={{ hostvars[host]['ansible_host'] }}:{{ zookeeper_peer_port }}:{{ zookeeper_leader_port }}{% if not loop.last %} {% endif %}
+  {%- endfor -%}
+
+# --- 运行用户 ---
+zookeeper_user: "{{ middleware_user }}"
+zookeeper_group: "{{ middleware_group }}"
+
+# --- JVM 内存 ---
+zookeeper_heap_size: "2G"
+
+# --- 性能调优 ---
+zookeeper_tick_time: 2000                        # 基础时间单位（毫秒）
+zookeeper_init_limit: 10                         # Follower 连接 Leader 的超时时间（tick 倍数）
+zookeeper_sync_limit: 5                          # Follower 同步 Leader 的超时时间（tick 倍数）
+zookeeper_max_client_connections: 2000
+zookeeper_autopurge_snap_retain_count: 10        # 保留最近快照文件数量
+zookeeper_autopurge_purge_interval: 1            # 自动清理间隔（小时）
+zookeeper_global_outstanding_limit: 1000         # 最大排队请求数
+
+# --- 日志与快照 ---
+zookeeper_snap_count: 100000                     # 快照间事务数
+zookeeper_pre_alloc_size: 65536                  # 事务日志预分配大小（KB）
+
+# --- 安全管理 ---
+zookeeper_super_digest: ""                       # 超级管理员 digest，格式 "super:<base64>"
+# zookeeper_jaas_enabled: false                  # 是否启用 SASL 认证（若需要需额外模板）
+
+# --- 防火墙规则允许的客户端网段 ---
+zookeeper_client_allow_cidr: "10.0.0.0/8"
+
+# --- Docker 镜像 ---
+zookeeper_docker_image: "zookeeper:{{ zookeeper_version }}"
+
+# --- 是否包含系统调优 ---
+zookeeper_include_system_tuning: true

@@ -1,0 +1,94 @@
+---
+# roles/tomcat/tasks/docker_install.yml
+# Apache Tomcat Docker 安装方式：拉取镜像、挂载配置、运行容器
+
+- name: 安装 Docker（如果未安装）
+  include_tasks: install_docker.yml
+  when: docker_installed is not defined or not docker_installed
+
+- name: 创建 Tomcat webapps 目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ tomcat_webapps_dir }}"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0755"
+
+- name: 创建 Tomcat 日志目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ tomcat_log_dir }}"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0755"
+
+- name: 创建 Tomcat 配置目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ tomcat_install_dir }}/conf"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0755"
+
+- name: 生成 Tomcat server.xml 配置文件
+  ansible.builtin.template:
+    src: server.xml.j2
+    dest: "{{ tomcat_install_dir }}/conf/server.xml"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0640"
+  notify: restart docker tomcat
+
+- name: 生成 JVM 参数文件 setenv.sh
+  ansible.builtin.template:
+    src: setenv.sh.j2
+    dest: "{{ tomcat_install_dir }}/bin/setenv.sh"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0750"
+  notify: restart docker tomcat
+
+- name: 登录私有镜像仓库（可选）
+  community.docker.docker_login:
+    registry_url: "{{ docker_registry_url | default(omit) }}"
+    username: "{{ docker_registry_username | default(omit) }}"
+    password: "{{ docker_registry_password | default(omit) }}"
+  when: docker_registry_url is defined and docker_registry_username is defined
+  no_log: true
+
+- name: 拉取 Tomcat Docker 镜像
+  community.docker.docker_image:
+    name: "{{ tomcat_docker_image }}"
+    source: pull
+    tag: "{{ tomcat_docker_image_tag | default(omit) }}"
+    force_source: "{{ tomcat_docker_force_pull | default(false) }}"
+
+- name: 运行 Tomcat 容器
+  community.docker.docker_container:
+    name: tomcat
+    image: "{{ tomcat_docker_image }}"
+    state: started
+    restart_policy: always
+    container_default_behavior: no_defaults
+    networks:
+      - name: bridge
+    ports:
+      - "{{ tomcat_http_port }}:8080"
+      {% if tomcat_ajp_enabled | default(false) | bool %}
+      - "{{ tomcat_ajp_port }}:8009"
+      {% endif %}
+    volumes:
+      - "{{ tomcat_webapps_dir }}:/usr/local/tomcat/webapps"
+      - "{{ tomcat_log_dir }}:/usr/local/tomcat/logs"
+      - "{{ tomcat_install_dir }}/conf/server.xml:/usr/local/tomcat/conf/server.xml:ro"
+      - "{{ tomcat_install_dir }}/bin/setenv.sh:/usr/local/tomcat/bin/setenv.sh:ro"
+    env:
+      TZ: "{{ timezone | default('Asia/Shanghai') }}"
+  notify: restart docker tomcat
+
+- name: 等待 Tomcat 容器对外端口就绪（宿主机端口检查）
+  ansible.builtin.wait_for:
+    port: "{{ tomcat_http_port }}"
+    state: started
+    timeout: 120
+    delay: 5

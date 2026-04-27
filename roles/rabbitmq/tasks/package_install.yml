@@ -1,0 +1,84 @@
+---
+# roles/rabbitmq/tasks/package_install.yml
+# RabbitMQ 包管理器安装：通过 apt/yum 安装 RabbitMQ 及其 Erlang 依赖
+
+- name: 安装 Erlang 环境（RedHat 系）
+  ansible.builtin.yum:
+    name:
+      - erlang
+    state: present
+    update_cache: true
+  when: ansible_os_family == "RedHat"
+  tags:
+    - erlang
+    - dependencies
+
+- name: 安装 Erlang 环境（Debian 系）
+  ansible.builtin.apt:
+    name:
+      - erlang-base
+      - erlang-nox
+      - erlang-ssl
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+  tags:
+    - erlang
+    - dependencies
+
+- name: 安装 RabbitMQ 仓库（RedHat 系）
+  ansible.builtin.yum_repository:
+    name: rabbitmq-server
+    description: RabbitMQ Server
+    baseurl: "https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-server/rpm/el/$releasever/$basearch"
+    gpgcheck: false
+    enabled: true
+  when: ansible_os_family == "RedHat"
+
+- name: 安装 RabbitMQ 仓库（Debian 系）
+  ansible.builtin.apt_repository:
+    repo: "deb https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-server/deb/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} main"
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+- name: 安装 RabbitMQ 软件包（RedHat 系）
+  ansible.builtin.yum:
+    name:
+      - rabbitmq-server
+    state: present
+    update_cache: true
+  when: ansible_os_family == "RedHat"
+
+- name: 安装 RabbitMQ 软件包（Debian 系）
+  ansible.builtin.apt:
+    name:
+      - rabbitmq-server
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+- name: 确保 RabbitMQ 配置目录存在
+  ansible.builtin.file:
+    path: /etc/rabbitmq
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 RabbitMQ 主配置文件
+  ansible.builtin.template:
+    src: rabbitmq.conf.j2
+    dest: /etc/rabbitmq/rabbitmq.conf
+    owner: root
+    group: root
+    mode: "0640"
+  notify: restart rabbitmq
+
+- name: 启用 RabbitMQ 管理插件
+  ansible.builtin.shell: rabbitmq-plugins enable {{ item }}
+  loop: "{{ rabbitmq_plugins }}"
+  register: plugin_enable
+  changed_when: "'already enabled' not in plugin_enable.stdout"
+  when: rabbitmq_plugins is defined and rabbitmq_plugins | length > 0
+  notify: restart rabbitmq

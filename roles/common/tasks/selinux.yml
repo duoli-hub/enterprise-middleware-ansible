@@ -1,0 +1,54 @@
+---
+# roles/common/tasks/selinux.yml
+# 管理 SELinux 状态（仅 RedHat 系）
+# 默认禁用 SELinux 以避免中间件通信被拦截
+# 可通过 enable_selinux 变量控制（false 表示禁用）
+
+- name: 检查 SELinux 是否安装
+  ansible.builtin.stat:
+    path: /etc/selinux/config
+  register: selinux_config_file
+  tags:
+    - selinux
+
+- name: 设置 SELinux 为 disabled 并立即生效（permissive）
+  when:
+    - selinux_config_file.stat.exists
+    - not (enable_selinux | default(false) | bool)
+  block:
+    - name: 修改 /etc/selinux/config 为 disabled
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: 'SELINUX=disabled'
+        state: present
+      notify: reboot required for SELinux disable
+
+    - name: 运行时将 SELinux 设置为 permissive（避免立即重启）
+      ansible.builtin.command: setenforce 0
+      changed_when: false
+      failed_when: false
+      when: ansible_selinux.status == 'enabled' or ansible_selinux.mode == 'enforcing'
+  tags:
+    - selinux
+
+- name: 恢复 SELinux 为 enforcing（当显式要求启用时）
+  when:
+    - selinux_config_file.stat.exists
+    - enable_selinux | default(false) | bool
+  block:
+    - name: 修改 /etc/selinux/config 为 enforcing
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: 'SELINUX=enforcing'
+        state: present
+      notify: reboot required for SELinux enable
+
+    - name: 运行时应用 enforcing 模式
+      ansible.builtin.command: setenforce 1
+      changed_when: false
+      failed_when: false
+      when: ansible_selinux.mode == 'permissive'
+  tags:
+    - selinux

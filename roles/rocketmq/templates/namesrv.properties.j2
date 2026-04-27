@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# RocketMQ NameServer 配置文件 - 由 Ansible 管理
+
+# 监听端口
+listenPort={{ rocketmq_namesrv_port | default(9876) }}
+
+# NameServer 日志配置（由启动脚本通过环境变量设置，此处可留空）
+# LOG_HOME / ROCKETMQ_HOME 将在 systemd 服务或容器中定义
+
+# 其他高级参数可按需添加
+# kvConfigPath=/etc/rocketmq/kvConfig.json
+# configStorePath=/etc/rocketmq/namesrv.properties

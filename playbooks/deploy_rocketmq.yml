@@ -1,0 +1,52 @@
+---
+# ============================================================
+# Apache RocketMQ 部署 Playbook
+# 支持 standalone、master_slave、dual_master、dual_master_dual_slave 架构
+# 执行: ./deploy.sh rocketmq [--arch <架构>] [--method <安装方式>]
+# ============================================================
+
+- name: 部署 RocketMQ Name Server
+  hosts: rocketmq_namesrv
+  become: true
+  gather_facts: true
+  vars:
+    rocketmq_architecture: "{{ rocketmq_architecture | default('dual_master_dual_slave') }}"
+    rocketmq_install_method: "{{ rocketmq_install_method | default(install_method) }}"
+  roles:
+    - role: rocketmq
+      tasks_from: namesrv.yml
+  tags:
+    - rocketmq
+    - namesrv
+    - install
+
+- name: 部署 RocketMQ Broker
+  hosts: rocketmq_broker_master:rocketmq_broker_slave
+  become: true
+  gather_facts: true
+  vars:
+    rocketmq_architecture: "{{ rocketmq_architecture | default('dual_master_dual_slave') }}"
+    rocketmq_install_method: "{{ rocketmq_install_method | default(install_method) }}"
+  roles:
+    - role: rocketmq
+      tasks_from: broker.yml
+  tags:
+    - rocketmq
+    - broker
+    - install
+
+- name: 部署 RocketMQ Console（可选）
+  hosts: rocketmq_console
+  become: true
+  gather_facts: true
+  vars:
+    rocketmq_console_enabled: "{{ rocketmq_console_enabled | default(false) }}"
+  tasks:
+    - name: 部署 RocketMQ 控制台
+      include_role:
+        name: rocketmq
+        tasks_from: console.yml
+      when: rocketmq_console_enabled | bool
+  tags:
+    - rocketmq
+    - console

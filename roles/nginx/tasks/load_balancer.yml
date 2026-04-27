@@ -1,0 +1,44 @@
+---
+# roles/nginx/tasks/load_balancer.yml
+# Nginx 负载均衡架构配置
+# 适用于 nginx_architecture == 'load_balancer' 或作为 keepalived_ha 的基础
+# 动态生成 upstream 块并应用到 Nginx 配置
+
+- name: 确保上游服务器组已定义
+  ansible.builtin.fail:
+    msg: "负载均衡模式需要定义 nginx_upstreams 变量，且至少包含一个上游组"
+  when: nginx_upstreams is not defined or nginx_upstreams | length == 0
+
+- name: 确保 Nginx 配置目录存在
+  ansible.builtin.file:
+    path: "{{ nginx_conf_dir | default('/etc/nginx') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 Nginx 主配置文件（负载均衡模式）
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ nginx_conf_dir | default('/etc/nginx') }}/nginx.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart nginx
+
+- name: 生成负载均衡专用站点配置
+  ansible.builtin.template:
+    src: load_balancer.conf.j2
+    dest: "{{ nginx_conf_dir | default('/etc/nginx') }}/conf.d/load_balancer.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart nginx
+
+- name: 启动并启用 Nginx 服务
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: nginx_install_method in ['package', 'compile']

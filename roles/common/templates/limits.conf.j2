@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+# 文件描述符与进程限制配置
+# 适用于中间件运行用户及 root 用户
+
+{{ middleware_user }}  soft  nofile  {{ system_tuning.limits.nofile_soft }}
+{{ middleware_user }}  hard  nofile  {{ system_tuning.limits.nofile_hard }}
+{{ middleware_user }}  soft  nproc   {{ system_tuning.limits.nproc_soft }}
+{{ middleware_user }}  hard  nproc   {{ system_tuning.limits.nproc_hard }}
+{{ middleware_user }}  soft  memlock {{ system_tuning.limits.memlock }}
+{{ middleware_user }}  hard  memlock {{ system_tuning.limits.memlock }}
+
+root  soft  nofile  {{ system_tuning.limits.nofile_soft }}
+root  hard  nofile  {{ system_tuning.limits.nofile_hard }}

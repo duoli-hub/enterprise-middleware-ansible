@@ -1,0 +1,100 @@
+---
+# roles/zookeeper/tasks/docker_install.yml
+# Apache ZooKeeper Docker 安装方式：拉取镜像、运行容器
+# 支持 standalone 和 cluster 架构
+
+- name: 安装 Docker（如果未安装）
+  include_tasks: install_docker.yml
+  when: docker_installed is not defined or not docker_installed
+
+- name: 创建 ZooKeeper 数据目录
+  ansible.builtin.file:
+    path: "{{ zookeeper_data_dir }}"
+    state: directory
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0750"
+
+- name: 创建 ZooKeeper 日志目录
+  ansible.builtin.file:
+    path: "{{ zookeeper_log_dir }}"
+    state: directory
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0750"
+
+- name: 登录私有镜像仓库（可选）
+  community.docker.docker_login:
+    registry_url: "{{ docker_registry_url | default(omit) }}"
+    username: "{{ docker_registry_username | default(omit) }}"
+    password: "{{ docker_registry_password | default(omit) }}"
+  when: docker_registry_url is defined and docker_registry_username is defined
+  no_log: true
+
+- name: 拉取 ZooKeeper Docker 镜像
+  community.docker.docker_image:
+    name: "{{ zookeeper_docker_image }}"
+    source: pull
+    tag: "{{ zookeeper_docker_image_tag | default(omit) }}"
+    force_source: "{{ zookeeper_docker_force_pull | default(false) }}"
+
+- name: 运行 ZooKeeper 容器（单机模式）
+  community.docker.docker_container:
+    name: zookeeper
+    image: "{{ zookeeper_docker_image }}"
+    state: started
+    restart_policy: always
+    networks:
+      - name: bridge
+    ports:
+      - "{{ zookeeper_client_port }}:2181"
+    volumes:
+      - "{{ zookeeper_data_dir }}:/data"
+      - "{{ zookeeper_log_dir }}:/datalog"
+    env:
+      ZOO_PORT: "{{ zookeeper_client_port }}"
+      TZ: "{{ timezone | default('Asia/Shanghai') }}"
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  when: zookeeper_architecture == 'standalone'
+  notify: restart docker zookeeper
+
+- name: 运行 ZooKeeper 容器（集群模式）
+  community.docker.docker_container:
+    name: zookeeper
+    image: "{{ zookeeper_docker_image }}"
+    state: started
+    restart_policy: always
+    networks:
+      - name: bridge
+    ports:
+      - "{{ zookeeper_client_port }}:2181"
+      - "{{ zookeeper_peer_port }}:2888"
+      - "{{ zookeeper_leader_port }}:3888"
+    volumes:
+      - "{{ zookeeper_data_dir }}:/data"
+      - "{{ zookeeper_log_dir }}:/datalog"
+    env:
+      ZOO_MY_ID: "{{ zk_id }}"
+      ZOO_SERVERS: "{{ zookeeper_servers }}"
+      ZOO_PORT: "{{ zookeeper_client_port }}"
+      TZ: "{{ timezone | default('Asia/Shanghai') }}"
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  when: zookeeper_architecture == 'cluster'
+  notify: restart docker zookeeper
+
+- name: 等待 ZooKeeper 容器健康检查通过
+  ansible.builtin.command: docker exec zookeeper zkServer.sh status
+  register: zk_status
+  changed_when: false
+  retries: 20
+  delay: 5
+  until: zk_status.rc == 0
+  tags: verify

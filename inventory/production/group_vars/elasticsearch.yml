@@ -1,0 +1,145 @@
+# ============================================================
+# Elasticsearch 部署变量
+# ============================================================
+
+# --- 版本 ---
+elasticsearch_version: "8.12.1"
+
+# --- 安装方式（覆盖全局 install_method） ---
+# 可选值: package | docker | docker_compose | k8s_yaml | k8s_helm
+elasticsearch_install_method: "{{ install_method }}"
+
+# --- 架构模式 ---
+# 可选值: standalone | cluster
+elasticsearch_architecture: "cluster"
+
+# --- 集群名称 ---
+elasticsearch_cluster_name: "es-production-cluster"
+
+# --- 节点名称（自动使用 inventory_hostname） ---
+elasticsearch_node_name: "{{ inventory_hostname }}"
+
+# --- 节点角色 ---
+# 可选角色: master, data, data_content, data_hot, data_warm, data_cold, data_frozen, ingest, ml, remote_cluster_client, transform
+elasticsearch_node_roles:
+  - master
+  - data
+  - ingest
+
+# --- 路径 ---
+elasticsearch_data_dir: "{{ base_data_dir }}/elasticsearch"
+elasticsearch_log_dir: "{{ base_log_dir }}/elasticsearch"
+
+# --- 网络 ---
+elasticsearch_http_host: "0.0.0.0"
+elasticsearch_http_port: 9200
+elasticsearch_transport_host: "{{ ansible_host }}"
+elasticsearch_transport_port: 9300
+elasticsearch_publish_host: "{{ ansible_host }}"
+
+# --- 发现与引导 ---
+elasticsearch_discovery_seed_hosts: >-
+  {%- for host in groups['elasticsearch'] -%}
+  {{ hostvars[host]['ansible_host'] }}:{{ elasticsearch_transport_port }}{% if not loop.last %},{% endif %}
+  {%- endfor -%}
+
+elasticsearch_cluster_initial_master_nodes: >-
+  {%- for host in groups['elasticsearch'] -%}
+  {{ hostvars[host]['inventory_hostname'] }}{% if not loop.last %},{% endif %}
+  {%- endfor -%}
+
+# --- JVM 堆内存 ---
+elasticsearch_heap_size: "{{ (ansible_memtotal_mb * 0.5) | int }}m"   # 默认物理内存的 50%，上限 31g
+
+# --- JVM 自定义选项 ---
+elasticsearch_jvm_custom_options:
+  - "-XX:+UseG1GC"
+  - "-XX:MaxGCPauseMillis=200"
+  - "-XX:G1HeapRegionSize=4m"
+  - "-XX:InitiatingHeapOccupancyPercent=30"
+  - "-XX:+ParallelRefProcEnabled"
+  - "-XX:+DisableExplicitGC"
+
+# --- 安全 ---
+elasticsearch_xpack_security_enabled: true
+elasticsearch_xpack_security_transport_ssl_enabled: true
+elasticsearch_xpack_security_http_ssl_enabled: false        # 生产建议开启，需配合证书
+
+# 内置用户密码（强烈建议 vault 加密）
+elasticsearch_bootstrap_password: "{{ vault_elasticsearch_bootstrap_password }}"
+elasticsearch_builtin_users:
+  elastic: "{{ vault_elasticsearch_bootstrap_password }}"
+  kibana_system: "{{ vault_elasticsearch_kibana_password }}"
+  logstash_system: "{{ vault_elasticsearch_logstash_password }}"
+  beats_system: "{{ vault_elasticsearch_beats_password }}"
+  apm_system: "{{ vault_elasticsearch_apm_password }}"
+  remote_monitoring_user: "{{ vault_elasticsearch_monitoring_password }}"
+
+# --- TLS 证书路径（启用 SSL 后必填） ---
+# elasticsearch_tls_certificate: "/etc/elasticsearch/certs/elastic-certificates.p12"
+# elasticsearch_tls_truststore: "/etc/elasticsearch/certs/elastic-stack-ca.p12"
+
+# --- 索引与搜索 ---
+elasticsearch_index_number_of_shards: 1
+elasticsearch_index_number_of_replicas: 1
+elasticsearch_indices_memory_index_buffer_size: "20%"
+elasticsearch_indices_recovery_max_bytes_per_sec: "200mb"
+elasticsearch_indices_queries_cache_size: "10%"
+elasticsearch_indices_fielddata_cache_size: "20%"
+elasticsearch_indices_requests_cache_size: "1%"
+
+# --- 分片与恢复 ---
+elasticsearch_cluster_routing_allocation_enable: "all"
+elasticsearch_cluster_routing_allocation_node_concurrent_recoveries: 2
+elasticsearch_cluster_routing_allocation_node_initial_primaries_recoveries: 4
+
+# --- 节点恢复配置 ---
+elasticsearch_gateway_recover_after_nodes: 2
+elasticsearch_gateway_expected_nodes: "{{ groups['elasticsearch'] | length }}"
+elasticsearch_gateway_recover_after_time: "5m"
+
+# --- 线程池 ---
+elasticsearch_thread_pool_write_size: "{{ (ansible_processor_cores * 2) | int }}"
+elasticsearch_thread_pool_search_size: "{{ (ansible_processor_cores * 3) | int }}"
+elasticsearch_thread_pool_get_size: "{{ ansible_processor_cores }}"
+
+# --- 慢查询日志 ---
+elasticsearch_slowlog_index_search_threshold_query_warn: "5s"
+elasticsearch_slowlog_index_search_threshold_query_info: "2s"
+elasticsearch_slowlog_index_indexing_threshold_index_warn: "5s"
+elasticsearch_slowlog_index_indexing_threshold_index_info: "2s"
+
+# --- 磁盘水位线 ---
+elasticsearch_cluster_routing_allocation_disk_watermark_low: "85%"
+elasticsearch_cluster_routing_allocation_disk_watermark_high: "90%"
+elasticsearch_cluster_routing_allocation_disk_watermark_flood_stage: "95%"
+
+# --- 系统级限制（ES 运行时自动调整或必须手动预设） ---
+elasticsearch_max_open_files: 65535
+elasticsearch_max_locked_memory: "unlimited"
+elasticsearch_max_map_count: 262144
+
+# --- Docker 镜像 ---
+elasticsearch_docker_image: "docker.elastic.co/elasticsearch/elasticsearch:{{ elasticsearch_version }}"
+
+# --- Helm Chart 配置 ---
+elasticsearch_helm_repo_name: "elastic"
+elasticsearch_helm_repo_url: "https://helm.elastic.co"
+elasticsearch_helm_chart: "elastic/elasticsearch"
+elasticsearch_helm_chart_version: "{{ elasticsearch_version }}"
+elasticsearch_helm_namespace: "default"
+elasticsearch_helm_release_name: "elasticsearch"
+elasticsearch_helm_values: {}
+# 示例值：
+#   replicas: 3
+#   resources:
+#     requests:
+#       memory: "4Gi"
+#       cpu: "2"
+
+# --- Prometheus 监控导出器（可选） ---
+elasticsearch_prometheus_exporter_enabled: false
+elasticsearch_prometheus_exporter_port: 9114
+
+# --- 是否包含系统调优 ---
+elasticsearch_include_system_tuning: true

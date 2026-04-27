@@ -1,0 +1,32 @@
+---
+# roles/redis/tasks/standalone.yml
+# Redis 单机架构：仅部署 Redis 主进程，无复制、Sentinel 或集群
+
+- name: 确保 Redis 配置目录存在
+  ansible.builtin.file:
+    path: /etc/redis
+    state: directory
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 生成 Redis 配置文件（单机模式）
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: /etc/redis/redis.conf
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0640"
+  notify: restart redis
+
+- name: 生成 Redis systemd 服务文件（单机）
+  ansible.builtin.template:
+    src: redis.service.j2
+    dest: /etc/systemd/system/redis.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart redis
+  when: redis_install_method in ['binary', 'package', 'compile']

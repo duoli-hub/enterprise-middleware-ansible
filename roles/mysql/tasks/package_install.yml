@@ -1,0 +1,64 @@
+---
+# roles/mysql/tasks/package_install.yml
+# MySQL 包管理器安装：通过 yum/apt 安装系统自带的 MySQL 或 MySQL Community Edition
+# 支持 RedHat 系 (mysql-server) 和 Debian 系 (mysql-server)
+
+- name: 安装 MySQL - RedHat 系
+  ansible.builtin.yum:
+    name:
+      - mysql-server
+      - mysql
+    state: present
+    update_cache: true
+  when: ansible_os_family == "RedHat"
+  tags:
+    - package
+    - install
+
+- name: 安装 MySQL - Debian 系
+  ansible.builtin.apt:
+    name:
+      - mysql-server
+      - mysql-client
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+  tags:
+    - package
+    - install
+
+- name: 确保 MySQL 配置目录存在
+  ansible.builtin.file:
+    path: /etc/mysql
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 MySQL 配置文件 my.cnf
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: /etc/my.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart mysql
+
+- name: 生成 MySQL systemd 服务文件（覆盖）
+  ansible.builtin.template:
+    src: mysql.service.j2
+    dest: /etc/systemd/system/mysqld.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: mysql_override_systemd | default(true) | bool
+  notify:
+    - reload systemd
+    - restart mysql
+
+- name: 启动并启用 MySQL 服务
+  ansible.builtin.systemd:
+    name: "{{ 'mysqld' if ansible_os_family == 'RedHat' else 'mysql' }}"
+    state: started
+    enabled: true
+    daemon_reload: true

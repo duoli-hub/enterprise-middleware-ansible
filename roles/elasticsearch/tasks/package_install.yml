@@ -1,0 +1,129 @@
+---
+# roles/elasticsearch/tasks/package_install.yml
+# Elasticsearch 包管理器安装：通过 rpm/deb 仓库安装
+# 支持在线/离线，自动适配 RedHat / Debian 系
+
+- name: 安装 Java（Elasticsearch 自带 OpenJDK，但可安装系统 Java 备用）
+  ansible.builtin.include_tasks: install_java.yml
+  when: elasticsearch_install_java | default(true) | bool
+  tags: java
+
+- name: 导入 Elasticsearch GPG 密钥（在线模式）
+  ansible.builtin.rpm_key:
+    state: present
+    key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+  when:
+    - install_mode == "online"
+    - ansible_os_family == "RedHat"
+  tags: repo
+
+- name: 添加 Elasticsearch YUM 仓库（RedHat 系）
+  ansible.builtin.yum_repository:
+    name: elasticsearch
+    description: Elasticsearch repository for {{ elasticsearch_version.split('.')[0] }}.x packages
+    baseurl: "https://artifacts.elastic.co/packages/{{ elasticsearch_version.split('.')[0] }}.x/yum"
+    gpgcheck: true
+    gpgkey: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+    enabled: true
+  when:
+    - install_mode == "online"
+    - ansible_os_family == "RedHat"
+  tags: repo
+
+- name: 添加 Elasticsearch APT 仓库（Debian 系）
+  ansible.builtin.apt_repository:
+    repo: "deb https://artifacts.elastic.co/packages/{{ elasticsearch_version.split('.')[0] }}.x/apt stable main"
+    state: present
+    update_cache: true
+  when:
+    - install_mode == "online"
+    - ansible_os_family == "Debian"
+  tags: repo
+
+- name: 安装 Elasticsearch RPM 包（在线 RedHat）
+  ansible.builtin.yum:
+    name: "elasticsearch-{{ elasticsearch_version }}"
+    state: present
+    update_cache: true
+  when:
+    - install_mode == "online"
+    - ansible_os_family == "RedHat"
+  tags: install
+
+- name: 安装 Elasticsearch DEB 包（在线 Debian）
+  ansible.builtin.apt:
+    name: "elasticsearch={{ elasticsearch_version }}"
+    state: present
+    update_cache: true
+  when:
+    - install_mode == "online"
+    - ansible_os_family == "Debian"
+  tags: install
+
+- name: 本地离线安装 Elasticsearch（RedHat）
+  ansible.builtin.yum:
+    name: "{{ elasticsearch_offline_package | default(playbook_dir + '/files/elasticsearch-' + elasticsearch_version + '.rpm') }}"
+    state: present
+  when:
+    - install_mode == "offline"
+    - ansible_os_family == "RedHat"
+  tags: install
+
+- name: 本地离线安装 Elasticsearch（Debian）
+  ansible.builtin.apt:
+    deb: "{{ elasticsearch_offline_package | default(playbook_dir + '/files/elasticsearch-' + elasticsearch_version + '.deb') }}"
+    state: present
+  when:
+    - install_mode == "offline"
+    - ansible_os_family == "Debian"
+  tags: install
+
+- name: 确保 Elasticsearch 数据目录存在
+  ansible.builtin.file:
+    path: "{{ elasticsearch_data_dir }}"
+    state: directory
+    owner: elasticsearch
+    group: elasticsearch
+    mode: "0750"
+
+- name: 确保 Elasticsearch 日志目录存在
+  ansible.builtin.file:
+    path: "{{ elasticsearch_log_dir }}"
+    state: directory
+    owner: elasticsearch
+    group: elasticsearch
+    mode: "0750"
+
+- name: 部署 Elasticsearch 主配置文件
+  ansible.builtin.template:
+    src: elasticsearch.yml.j2
+    dest: /etc/elasticsearch/elasticsearch.yml
+    owner: root
+    group: elasticsearch
+    mode: "0640"
+  notify: restart elasticsearch
+
+- name: 部署 JVM 选项文件
+  ansible.builtin.template:
+    src: jvm.options.j2
+    dest: /etc/elasticsearch/jvm.options.d/custom.options
+    owner: root
+    group: elasticsearch
+    mode: "0640"
+  notify: restart elasticsearch
+
+- name: 配置 systemd 服务中的文件描述符限制
+  ansible.builtin.lineinfile:
+    path: /usr/lib/systemd/system/elasticsearch.service
+    line: "LimitNOFILE={{ elasticsearch_max_open_files | default(65535) }}"
+    regexp: '^LimitNOFILE='
+    state: present
+  notify: reload systemd
+
+- name: 配置 sysctl vm.max_map_count 永久生效
+  ansible.builtin.sysctl:
+    name: vm.max_map_count
+    value: "{{ elasticsearch_max_map_count | default(262144) }}"
+    state: present
+    sysctl_set: yes
+    reload: yes

@@ -1,0 +1,49 @@
+---
+# roles/kafka/tasks/kraft_cluster.yml
+# Apache Kafka KRaft 集群模式配置（无 ZooKeeper）
+# 负责格式化存储目录、生成 KRaft 配置文件并启动服务
+
+- name: 检查是否已存在集群 UUID（避免重复格式化）
+  ansible.builtin.stat:
+    path: "{{ kafka_data_dir }}/meta.properties"
+  register: kraft_meta_file
+
+- name: 生成集群 UUID（仅首次执行）
+  ansible.builtin.command: >
+    {{ kafka_install_dir | default(base_install_dir + '/kafka') }}/bin/kafka-storage.sh random-uuid
+  register: cluster_uuid_result
+  run_once: true
+  delegate_to: "{{ groups['kafka_brokers'][0] }}"
+  when: not kraft_meta_file.stat.exists
+
+- name: 记录集群 UUID 为事实变量
+  ansible.builtin.set_fact:
+    kafka_cluster_uuid: "{{ cluster_uuid_result.stdout }}"
+  when: cluster_uuid_result is defined and cluster_uuid_result.stdout != ""
+
+- name: 格式化存储目录（使用集群 UUID）
+  ansible.builtin.command: >
+    {{ kafka_install_dir | default(base_install_dir + '/kafka') }}/bin/kafka-storage.sh format
+    --config {{ kafka_install_dir | default(base_install_dir + '/kafka') }}/config/kraft_server.properties
+    --cluster-id {{ kafka_cluster_uuid }}
+  args:
+    creates: "{{ kafka_data_dir }}/meta.properties"
+  when: kafka_cluster_uuid is defined and kafka_cluster_uuid != ""
+  notify: restart kafka
+
+- name: 生成 KRaft server.properties
+  ansible.builtin.template:
+    src: kraft_server.properties.j2
+    dest: "{{ kafka_install_dir | default(base_install_dir + '/kafka') }}/config/kraft_server.properties"
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    mode: "0640"
+  notify: restart kafka
+
+- name: 启动 KRaft 模式 Kafka 系统服务
+  ansible.builtin.systemd:
+    name: kafka
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: kafka_install_method == 'binary'

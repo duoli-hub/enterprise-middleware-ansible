@@ -1,0 +1,20 @@
+---
+# ============================================================
+# Apache ZooKeeper 部署 Playbook
+# 支持 standalone、cluster 架构
+# 执行: ./deploy.sh zookeeper [--arch <架构>] [--method <安装方式>]
+# ============================================================
+
+- name: 部署 ZooKeeper 节点
+  hosts: zookeeper
+  become: true
+  gather_facts: true
+  vars:
+    zookeeper_architecture: "{{ zookeeper_architecture | default('cluster') }}"
+    zookeeper_install_method: "{{ zookeeper_install_method | default(install_method) }}"
+  roles:
+    - role: zookeeper
+  tags:
+    - zookeeper
+    - install
+    - config

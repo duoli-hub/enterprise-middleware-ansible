@@ -1,0 +1,96 @@
+---
+# roles/redis/tasks/binary_install.yml
+# Redis 二进制安装：下载 tar.gz → 解压 → 部署二进制文件及配置文件
+# 同时创建所需目录与 systemd 服务单元
+
+- name: 检测操作系统架构
+  ansible.builtin.set_fact:
+    redis_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'x86_64' }}"
+
+- name: 下载 Redis 二进制包（在线模式）
+  ansible.builtin.get_url:
+    url: "https://download.redis.io/releases/redis-{{ redis_version }}-{{ redis_arch }}.tar.gz"
+    dest: "/tmp/redis-{{ redis_version }}-{{ redis_arch }}.tar.gz"
+    mode: "0644"
+    checksum: "{{ redis_binary_checksum | default(omit) }}"
+  when: install_mode == "online"
+  register: redis_download
+
+- name: 从本地文件复制二进制包（离线模式）
+  ansible.builtin.copy:
+    src: "{{ redis_offline_package | default(playbook_dir + '/files/redis-' + redis_version + '-' + redis_arch + '.tar.gz') }}"
+    dest: "/tmp/redis-{{ redis_version }}-{{ redis_arch }}.tar.gz"
+    mode: "0644"
+  when: install_mode == "offline"
+
+- name: 创建安装目录
+  ansible.builtin.file:
+    path: "{{ redis_install_dir | default(base_install_dir + '/redis') }}"
+    state: directory
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0755"
+
+- name: 解压 Redis 二进制包
+  ansible.builtin.unarchive:
+    src: "/tmp/redis-{{ redis_version }}-{{ redis_arch }}.tar.gz"
+    dest: "{{ redis_install_dir | default(base_install_dir + '/redis') }}"
+    remote_src: true
+    creates: "{{ redis_install_dir | default(base_install_dir + '/redis') }}/bin/redis-server"
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    extra_opts:
+      - --strip-components=1
+  notify: restart redis
+
+- name: 更新 PATH 环境变量（将 Redis 二进制目录加入 profile）
+  ansible.builtin.copy:
+    dest: /etc/profile.d/redis.sh
+    content: |
+      export PATH=$PATH:{{ redis_install_dir | default(base_install_dir + '/redis') }}/bin
+    mode: "0644"
+  when: redis_update_path | default(true) | bool
+
+- name: 创建 Redis 数据目录
+  ansible.builtin.file:
+    path: "{{ redis_data_dir | default(base_data_dir + '/redis') }}"
+    state: directory
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 Redis 日志目录
+  ansible.builtin.file:
+    path: "{{ redis_log_dir | default(base_log_dir + '/redis') }}"
+    state: directory
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 Redis 运行时目录（pid 等）
+  ansible.builtin.file:
+    path: /var/run/redis
+    state: directory
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 生成 Redis 配置文件
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: /etc/redis/redis.conf
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0640"
+  notify: restart redis
+
+- name: 创建 systemd 服务文件
+  ansible.builtin.template:
+    src: redis.service.j2
+    dest: /etc/systemd/system/redis.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart redis

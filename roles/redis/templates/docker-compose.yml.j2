@@ -1,0 +1,85 @@
+# {{ ansible_managed }}
+# Redis Docker Compose 编排文件 - 由 Ansible 管理
+# 架构: {{ redis_architecture }} | 安装方式: docker_compose
+version: '3.8'
+
+services:
+  redis-master:
+    image: {{ redis_docker_image }}
+    container_name: redis-master
+    restart: always
+    command: redis-server --requirepass {{ redis_password }} --masterauth {{ redis_password }} --appendonly yes --dir /data
+    ports:
+      - "{{ redis_port }}:6379"
+    volumes:
+      - redis-master-data:/data
+    networks:
+      - redis-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "{{ redis_password }}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis-slave:
+    image: {{ redis_docker_image }}
+    container_name: redis-slave
+    restart: always
+    command: >
+      redis-server
+      --requirepass {{ redis_password }}
+      --masterauth {{ redis_password }}
+      --replicaof redis-master {{ redis_port }}
+      --appendonly yes
+      --dir /data
+    ports:
+      - "{{ (redis_port | int) + 1 }}:6379"
+    volumes:
+      - redis-slave-data:/data
+    networks:
+      - redis-net
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "{{ redis_password }}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis-sentinel:
+    image: {{ redis_docker_image }}
+    container_name: redis-sentinel
+    restart: always
+    ports:
+      - "{{ redis_sentinel_port }}:26379"
+    volumes:
+      - redis-sentinel-data:/data
+    command: >
+      redis-sentinel /etc/redis/sentinel.conf
+    environment:
+      - REDIS_MASTER_HOST=redis-master
+      - REDIS_MASTER_PORT={{ redis_port }}
+      - REDIS_MASTER_PASSWORD={{ redis_password }}
+      - REDIS_SENTINEL_QUORUM={{ redis_sentinel_quorum }}
+    networks:
+      - redis-net
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-slave:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  redis-master-data:
+  redis-slave-data:
+  redis-sentinel-data:
+
+networks:
+  redis-net:
+    driver: bridge

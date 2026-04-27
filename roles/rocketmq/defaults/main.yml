@@ -1,0 +1,76 @@
+---
+# roles/rocketmq/defaults/main.yml
+# Apache RocketMQ 角色默认变量（最低优先级，可被 group_vars / host_vars 覆盖）
+
+# --- 版本 ---
+rocketmq_version: "5.1.4"
+
+# --- 安装方式与架构 ---
+rocketmq_install_method: "binary"
+rocketmq_architecture: "dual_master_dual_slave"
+
+# --- 下载地址 ---
+rocketmq_download_url: "https://dist.apache.org/repos/dist/release/rocketmq/{{ rocketmq_version }}/rocketmq-all-{{ rocketmq_version }}-bin-release.zip"
+
+# --- 路径 ---
+rocketmq_install_dir: "{{ base_install_dir }}/rocketmq"
+rocketmq_data_dir: "{{ base_data_dir }}/rocketmq"
+rocketmq_log_dir: "{{ base_log_dir }}/rocketmq"
+
+# --- 运行用户 ---
+rocketmq_user: "{{ middleware_user }}"
+rocketmq_group: "{{ middleware_group }}"
+
+# --- Name Server ---
+rocketmq_namesrv_port: 9876
+rocketmq_namesrv_heap: "-Xms512m -Xmx512m"
+rocketmq_namesrv_log_level: "ERROR"
+
+# --- Broker ---
+rocketmq_broker_port: 10911
+rocketmq_broker_heap: "-Xms2g -Xmx2g -XX:+UseG1GC"
+rocketmq_broker_log_level: "INFO"
+# broker_name, broker_role, broker_id 由主机变量提供或通过 playbook 传入
+
+# --- 集群 ---
+rocketmq_cluster_name: "DefaultCluster"
+
+# --- 存储路径 ---
+rocketmq_store_path_root_dir: "{{ rocketmq_data_dir }}/store"
+rocketmq_store_path_commitlog: "{{ rocketmq_store_path_root_dir }}/commitlog"
+rocketmq_store_path_consumequeue: "{{ rocketmq_store_path_root_dir }}/consumequeue"
+rocketmq_store_path_index: "{{ rocketmq_store_path_root_dir }}/index"
+rocketmq_store_path_checkpoint: "{{ rocketmq_store_path_root_dir }}/checkpoint"
+rocketmq_store_path_abort: "{{ rocketmq_store_path_root_dir }}/abort"
+
+# --- 磁盘与内存 ---
+rocketmq_disk_max_used_space_ratio: 88
+rocketmq_mapped_file_size_commitlog: "1G"
+rocketmq_mapped_file_size_consume_queue: 300000
+
+# --- 刷盘与同步 ---
+rocketmq_flush_disk_type: "ASYNC_FLUSH"
+rocketmq_broker_role_default: "SYNC_MASTER"
+
+# --- 延迟消息 ---
+rocketmq_message_delay_level: "1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h"
+
+# --- 功能开关 ---
+rocketmq_auto_create_topic_enable: true
+rocketmq_auto_create_subscription_group: true
+rocketmq_acl_enable: false
+rocketmq_acl_global_white_addrs: ""
+
+# --- Docker 镜像 ---
+rocketmq_docker_image: "apache/rocketmq:{{ rocketmq_version }}"
+rocketmq_docker_compose_dir: "{{ rocketmq_install_dir }}/compose"
+
+# --- 控制台 ---
+rocketmq_console_enabled: false
+rocketmq_console_port: 8080
+rocketmq_console_docker_image: "styletang/rocketmq-console-ng:latest"
+rocketmq_console_java_opts: "-Xms256m -Xmx256m"
+
+# --- 功能开关 ---
+rocketmq_include_system_tuning: true
+rocketmq_update_path: true

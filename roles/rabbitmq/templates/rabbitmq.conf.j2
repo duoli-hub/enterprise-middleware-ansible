@@ -1,0 +1,44 @@
+# {{ ansible_managed }}
+# RabbitMQ 配置文件 - 由 Ansible 管理
+# 架构: {{ rabbitmq_architecture }} | 集群名称: {{ rabbitmq_cluster_name | default('rabbit@' + inventory_hostname) }}
+
+# ===== 基础网络 =====
+listeners.tcp.default = {{ rabbitmq_amqp_port }}
+management.tcp.port = {{ rabbitmq_management_port }}
+management.tcp.ip   = 0.0.0.0
+
+{% if rabbitmq_architecture == 'cluster' %}
+# 集群通信端口
+listeners.tcp.local = {{ rabbitmq_amqp_port }}
+dist_port_range.min = {{ (rabbitmq_dist_port_range | default('25672-25682')).split('-')[0] }}
+dist_port_range.max = {{ (rabbitmq_dist_port_range | default('25672-25682')).split('-')[1] }}
+{% endif %}
+
+# ===== 身份验证 =====
+auth_backends.1 = internal
+{% if rabbitmq_admin_user is defined and rabbitmq_admin_password is defined %}
+default_user = {{ rabbitmq_admin_user }}
+default_pass = {{ rabbitmq_admin_password }}
+{% endif %}
+
+# ===== 日志 =====
+log.file.level = {{ rabbitmq_log_level | default('info') }}
+log.file = {{ rabbitmq_log_dir }}/rabbitmq.log
+
+# ===== 资源限制 =====
+vm_memory_high_watermark.relative = {{ rabbitmq_vm_memory_high_watermark_relative | default(0.6) }}
+disk_free_limit.absolute = {{ rabbitmq_disk_free_limit_absolute | default('2GB') }}
+
+# ===== 文件描述符 & 套接字 =====
+total_memory_available_override_value = {{ (ansible_memtotal_mb * 0.8) | int }}MB
+open_file_limit = {{ rabbitmq_open_file_limit | default(100000) }}
+tcp_listen_options.backlog = 4096
+tcp_listen_options.nodelay = true
+tcp_listen_options.linger.on = false
+
+{% if rabbitmq_architecture == 'cluster' %}
+# ===== 集群 =====
+cluster_formation.peer_discovery_backend = classic_config
+cluster_formation.classic_config.nodes = [{% for host in groups['rabbitmq'] %}'rabbit@{{ hostvars[host]['ansible_hostname'] | default(hostvars[host]['inventory_hostname']) }}'{% if not loop.last %}, {% endif %}{% endfor %}]
+cluster_name = {{ rabbitmq_cluster_name | default('rabbitmq-production-cluster') }}
+{% endif %}

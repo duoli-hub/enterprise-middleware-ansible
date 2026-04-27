@@ -1,0 +1,109 @@
+---
+# roles/elasticsearch/tasks/docker_install.yml
+# Elasticsearch Docker 安装方式：拉取镜像、创建目录、运行容器
+
+- name: 安装 Docker（如果未安装）
+  include_tasks: install_docker.yml
+  when: docker_installed is not defined or not docker_installed
+
+- name: 创建 Elasticsearch 数据目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ elasticsearch_data_dir }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+
+- name: 创建 Elasticsearch 日志目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ elasticsearch_log_dir }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+
+- name: 创建 Elasticsearch 配置目录（宿主机）
+  ansible.builtin.file:
+    path: /etc/elasticsearch
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 Elasticsearch 主配置文件
+  ansible.builtin.template:
+    src: elasticsearch.yml.j2
+    dest: /etc/elasticsearch/elasticsearch.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart docker elasticsearch
+
+- name: 生成 JVM 自定义选项
+  ansible.builtin.template:
+    src: jvm.options.j2
+    dest: /etc/elasticsearch/jvm.options
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart docker elasticsearch
+
+- name: 登录私有镜像仓库（可选）
+  community.docker.docker_login:
+    registry_url: "{{ docker_registry_url | default(omit) }}"
+    username: "{{ docker_registry_username | default(omit) }}"
+    password: "{{ docker_registry_password | default(omit) }}"
+  when: docker_registry_url is defined and docker_registry_username is defined
+  no_log: true
+
+- name: 拉取 Elasticsearch Docker 镜像
+  community.docker.docker_image:
+    name: "{{ elasticsearch_docker_image }}"
+    source: pull
+    tag: "{{ elasticsearch_docker_image_tag | default(omit) }}"
+    force_source: "{{ elasticsearch_docker_force_pull | default(false) }}"
+
+- name: 运行 Elasticsearch 容器
+  community.docker.docker_container:
+    name: elasticsearch
+    image: "{{ elasticsearch_docker_image }}"
+    state: started
+    restart_policy: always
+    networks:
+      - name: bridge
+    ports:
+      - "{{ elasticsearch_http_port }}:9200"
+      - "{{ elasticsearch_transport_port }}:9300"
+    volumes:
+      - "{{ elasticsearch_data_dir }}:/usr/share/elasticsearch/data"
+      - "{{ elasticsearch_log_dir }}:/usr/share/elasticsearch/logs"
+      - /etc/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - /etc/elasticsearch/jvm.options:/usr/share/elasticsearch/config/jvm.options:ro
+    env:
+      ES_JAVA_OPTS: "-Xms{{ elasticsearch_heap_size }} -Xmx{{ elasticsearch_heap_size }}"
+      node.name: "{{ elasticsearch_node_name | default(inventory_hostname) }}"
+      cluster.name: "{{ elasticsearch_cluster_name }}"
+      discovery.seed_hosts: "{{ elasticsearch_discovery_seed_hosts }}"
+      cluster.initial_master_nodes: "{{ elasticsearch_cluster_initial_master_nodes }}"
+      network.host: "0.0.0.0"
+      xpack.security.enabled: "{{ elasticsearch_xpack_security_enabled | default(true) | lower }}"
+      ELASTIC_PASSWORD: "{{ elasticsearch_bootstrap_password }}"
+      TZ: "{{ timezone | default('Asia/Shanghai') }}"
+    ulimits:
+      - "nofile:{{ elasticsearch_max_open_files | default(65535) }}:{{ elasticsearch_max_open_files | default(65535) }}"
+      - "memlock:-1:-1"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-u", "elastic:{{ elasticsearch_bootstrap_password }}", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+- name: 等待 Elasticsearch 容器健康检查通过
+  ansible.builtin.command: >
+    curl -f -u elastic:{{ elasticsearch_bootstrap_password }} http://localhost:{{ elasticsearch_http_port }}/_cluster/health
+  register: es_health
+  changed_when: false
+  retries: 20
+  delay: 5
+  until: es_health.rc == 0 and "'green' in es_health.stdout or 'yellow' in es_health.stdout"
+  tags: verify

@@ -1,0 +1,100 @@
+---
+# roles/redis/tasks/cluster.yml
+# Redis Cluster 集群架构配置
+# 所有节点运行 redis-server 进程，通过 redis-cli --cluster create 组成集群
+# 需要至少 6 个节点（3 主 3 从）才能启用完整集群功能
+
+- name: 验证 Redis Cluster 节点数量
+  ansible.builtin.fail:
+    msg: "Redis Cluster 至少需要 {{ redis_cluster_min_nodes | default(6) }} 个节点，当前定义了 {{ groups['redis'] | default([]) | length }} 个"
+  when: groups['redis'] | default([]) | length < (redis_cluster_min_nodes | default(6))
+
+- name: 开放 Redis 集群总线端口 (RedHat firewalld)
+  ansible.posix.firewalld:
+    port: "{{ (redis_port | int) + 10000 }}/tcp"   # 集群总线 = 基础端口 + 10000
+    permanent: true
+    state: enabled
+    immediate: true
+  when:
+    - ansible_os_family == "RedHat"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+  tags: firewall
+
+- name: 开放 Redis 集群总线端口 (Debian ufw)
+  community.general.ufw:
+    rule: allow
+    port: "{{ (redis_port | int) + 10000 }}"
+    proto: tcp
+  when:
+    - ansible_os_family == "Debian"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+  tags: firewall
+
+- name: 生成 Redis 配置文件（集群模式）
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: /etc/redis/redis.conf
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0640"
+  notify: restart redis
+  # 模板中将加入 cluster-enabled yes 等相关配置
+
+- name: 生成 Redis systemd 服务文件（集群模式）
+  ansible.builtin.template:
+    src: redis.service.j2
+    dest: /etc/systemd/system/redis.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart redis
+  when: redis_install_method in ['binary', 'package', 'compile']
+
+- name: 启动 Redis 服务（所有节点）
+  ansible.builtin.systemd:
+    name: redis
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: redis_install_method in ['binary', 'package', 'compile']
+
+- name: 等待所有节点端口可连接
+  ansible.builtin.wait_for:
+    host: "{{ hostvars[item]['ansible_host'] }}"
+    port: "{{ redis_port }}"
+    state: started
+    timeout: 60
+  loop: "{{ groups['redis'] }}"
+  when: redis_install_method not in ['docker', 'docker_compose', 'k8s_yaml', 'k8s_helm']
+
+- name: 第一次创建集群（仅在一个节点执行）
+  ansible.builtin.command: >
+    {{ redis_install_dir | default(base_install_dir + '/redis') }}/bin/redis-cli --cluster create
+    {% for host in groups['redis'] %}
+    {{ hostvars[host]['ansible_host'] }}:{{ redis_port }}
+    {% endfor %}
+    --cluster-replicas 1
+    --cluster-yes
+  args:
+    creates: "{{ redis_cluster_created_flag | default('/etc/redis/cluster_created.flag') }}"
+  run_once: true
+  register: cluster_create
+  when:
+    - redis_install_method in ['binary', 'package', 'compile']
+    - inventory_hostname == (groups['redis'] | first)   # 只在第一个节点执行
+  notify: tag cluster created
+
+- name: 标记集群已创建（防止重复执行）
+  ansible.builtin.file:
+    path: "{{ redis_cluster_created_flag | default('/etc/redis/cluster_created.flag') }}"
+    state: touch
+    owner: root
+    group: root
+    mode: "0640"
+  run_once: true
+  when: cluster_create is succeeded
+  tags: cluster_created

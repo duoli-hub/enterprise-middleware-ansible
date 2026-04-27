@@ -1,0 +1,28 @@
+# {{ ansible_managed }}
+# MHA Manager 配置文件 - 由 Ansible 管理
+# 用于 MySQL 高可用自动故障转移
+
+[server default]
+manager_workdir={{ mysql_mha_manager_workdir }}
+manager_log={{ mysql_mha_manager_workdir }}/manager.log
+user={{ mysql_mha_user }}
+password={{ mysql_mha_password }}
+repl_user={{ mysql_mha_repl_user }}
+repl_password={{ mysql_mha_repl_password }}
+ssh_user={{ mysql_mha_ssh_user }}
+ssh_port={{ mysql_mha_ssh_port }}
+ping_interval={{ mysql_mha_ping_interval | default(3) }}
+ping_timeout={{ mysql_mha_ping_timeout | default(3) }}
+master_ip_failover_script=/usr/local/bin/master_ip_failover
+# secondary_check_script=/usr/local/bin/master_ip_secondary_check
+# shutdown_script=/usr/local/bin/shutdown_master.sh
+# report_script=/usr/local/bin/send_report.sh
+check_repl_delay=1
+
+{% for host in groups['mysql_master'] + groups['mysql_slave'] %}
+[server_{{ loop.index }}]
+hostname={{ hostvars[host]['ansible_host'] }}
+port={{ mysql_port | default(3306) }}
+candidate_master={% if 'mysql_master' in hostvars[host].get('group_names', []) %}1{% else %}0{% endif %}
+check_repl_delay=0
+{% endfor %}

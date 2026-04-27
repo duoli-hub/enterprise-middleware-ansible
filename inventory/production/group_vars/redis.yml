@@ -1,0 +1,73 @@
+# ============================================================
+# Redis 部署变量
+# ============================================================
+
+# --- 版本 ---
+redis_version: "7.2.4"
+
+# --- 安装方式（覆盖全局 install_method） ---
+# 可选值: binary | package | compile | docker | docker_compose | k8s_yaml | k8s_helm
+redis_install_method: "{{ install_method }}"
+
+# --- 架构模式 ---
+# 可选值: standalone | master_slave | sentinel | cluster
+redis_architecture: "sentinel"
+
+# --- 端口 ---
+redis_port: 6379
+redis_sentinel_port: 26379
+
+# --- 密码（建议通过 vault 加密） ---
+redis_password: "{{ vault_redis_password }}"
+redis_sentinel_password: "{{ vault_redis_sentinel_password | default(redis_password) }}"
+
+# --- 持久化配置 ---
+redis_save:
+  - "900 1"
+  - "300 10"
+  - "60 10000"
+redis_appendonly: "yes"                     # 是否开启 AOF
+redis_appendfsync: "everysec"
+
+# --- 内存管理 ---
+redis_maxmemory: "4gb"
+redis_maxmemory_policy: "allkeys-lru"
+
+# --- 慢查询日志 ---
+redis_slowlog_log_slower_than: 10000        # 微秒
+redis_slowlog_max_len: 128
+
+# --- 连接与性能 ---
+redis_tcp_backlog: 511
+redis_timeout: 0
+redis_tcp_keepalive: 300
+redis_maxclients: 10000
+
+# --- 复制相关（主从 / Sentinel 模式） ---
+redis_min_replicas_to_write: 1
+redis_min_replicas_max_lag: 10
+
+# --- Sentinel 专用 ---
+redis_sentinel_quorum: 2
+redis_sentinel_down_after_milliseconds: 30000
+redis_sentinel_failover_timeout: 180000
+redis_sentinel_parallel_syncs: 1
+
+# --- 编译安装参数 ---
+redis_compile_jobs: "{{ ansible_processor_cores }}"
+redis_compile_build_tls: false              # 是否开启 TLS 支持
+
+# --- Docker 镜像 ---
+redis_docker_image: "redis:7.2.4-alpine"
+
+# --- Helm Chart 配置 ---
+redis_helm_repo_name: "bitnami"
+redis_helm_repo_url: "https://charts.bitnami.com/bitnami"
+redis_helm_chart: "bitnami/redis"
+redis_helm_chart_version: "18.6.1"
+redis_helm_namespace: "default"
+redis_helm_release_name: "redis-cluster"
+redis_helm_values: {}                       # 额外的 Helm 值，以字典形式传入
+
+# --- 是否包含系统调优（一般为 true） ---
+redis_include_system_tuning: true

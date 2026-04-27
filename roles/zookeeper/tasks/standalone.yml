@@ -1,0 +1,34 @@
+---
+# roles/zookeeper/tasks/standalone.yml
+# ZooKeeper 单机架构配置
+# 适用于 zookeeper_architecture == 'standalone'
+# 生成 zoo.cfg 配置文件及 systemd 服务文件（非容器化安装）
+
+- name: 确保 ZooKeeper 配置目录存在
+  ansible.builtin.file:
+    path: "{{ zookeeper_install_dir | default(base_install_dir + '/zookeeper') }}/conf"
+    state: directory
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0755"
+
+- name: 生成 ZooKeeper 配置文件 zoo.cfg（单机模式）
+  ansible.builtin.template:
+    src: zoo.cfg.j2
+    dest: "{{ zookeeper_install_dir | default(base_install_dir + '/zookeeper') }}/conf/zoo.cfg"
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0640"
+  notify: restart zookeeper
+
+- name: 创建 ZooKeeper systemd 服务文件（单机模式）
+  ansible.builtin.template:
+    src: zookeeper.service.j2
+    dest: /etc/systemd/system/zookeeper.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: zookeeper_install_method == 'binary'
+  notify:
+    - reload systemd
+    - restart zookeeper

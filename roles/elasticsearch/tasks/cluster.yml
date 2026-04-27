@@ -1,0 +1,44 @@
+---
+# roles/elasticsearch/tasks/cluster.yml
+# Elasticsearch 集群架构配置
+# 适用于 elasticsearch_architecture == 'cluster'
+# 生成 elasticsearch.yml（含发现与引导）、jvm.options 并启动服务
+
+- name: 验证集群节点数量
+  ansible.builtin.fail:
+    msg: "Elasticsearch 集群至少需要 3 个节点（或配置 discovery.seed_hosts），当前定义了 {{ groups['elasticsearch'] | length }} 个"
+  when: groups['elasticsearch'] | length < 1
+
+- name: 确保 Elasticsearch 配置目录存在
+  ansible.builtin.file:
+    path: /etc/elasticsearch
+    state: directory
+    owner: root
+    group: elasticsearch
+    mode: "0750"
+
+- name: 生成 Elasticsearch 主配置文件（集群模式）
+  ansible.builtin.template:
+    src: elasticsearch.yml.j2
+    dest: /etc/elasticsearch/elasticsearch.yml
+    owner: root
+    group: elasticsearch
+    mode: "0640"
+  notify: restart elasticsearch
+
+- name: 生成 JVM 自定义选项文件
+  ansible.builtin.template:
+    src: jvm.options.j2
+    dest: /etc/elasticsearch/jvm.options.d/custom.options
+    owner: root
+    group: elasticsearch
+    mode: "0640"
+  notify: restart elasticsearch
+
+- name: 启动并启用 Elasticsearch 服务（仅包安装）
+  ansible.builtin.systemd:
+    name: elasticsearch
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: elasticsearch_install_method == 'package'

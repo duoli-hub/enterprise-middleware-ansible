@@ -1,0 +1,109 @@
+---
+# roles/rocketmq/tasks/main.yml
+# Apache RocketMQ 角色主任务
+# 直接调用该角色时，会根据主机所属组分发至 namesrv / broker / console
+# 支持的安装方式: binary, docker_compose
+# 支持的架构: standalone, master_slave, dual_master, dual_master_dual_slave
+
+- name: 设置默认变量（避免未定义错误）
+  ansible.builtin.set_fact:
+    rocketmq_install_method: "{{ rocketmq_install_method | default(install_method) }}"
+    rocketmq_architecture: "{{ rocketmq_architecture | default('dual_master_dual_slave') }}"
+  tags: always
+
+- name: 包含系统调优角色
+  ansible.builtin.include_role:
+    name: common
+  when: rocketmq_include_system_tuning | default(true) | bool
+  tags:
+    - tuning
+    - common
+
+- name: 安装 Java（RocketMQ 依赖）
+  ansible.builtin.include_tasks: install_java.yml
+  tags: java
+
+- name: 开放 NameServer 端口 (RedHat)
+  ansible.posix.firewalld:
+    port: "{{ rocketmq_namesrv_port }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  when:
+    - ansible_os_family == "RedHat"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+    - "'rocketmq_namesrv' in group_names"
+  tags: firewall
+
+- name: 开放 NameServer 端口 (Debian)
+  community.general.ufw:
+    rule: allow
+    port: "{{ rocketmq_namesrv_port }}"
+    proto: tcp
+  when:
+    - ansible_os_family == "Debian"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+    - "'rocketmq_namesrv' in group_names"
+  tags: firewall
+
+- name: 开放 Broker 端口 (RedHat)
+  ansible.posix.firewalld:
+    port: "{{ rocketmq_broker_port }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  when:
+    - ansible_os_family == "RedHat"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+    - "'rocketmq_broker_master' in group_names or 'rocketmq_broker_slave' in group_names"
+  tags: firewall
+
+- name: 开放 Broker 端口 (Debian)
+  community.general.ufw:
+    rule: allow
+    port: "{{ rocketmq_broker_port }}"
+    proto: tcp
+  when:
+    - ansible_os_family == "Debian"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+    - "'rocketmq_broker_master' in group_names or 'rocketmq_broker_slave' in group_names"
+  tags: firewall
+
+- name: 开放 RocketMQ Console 端口（如有）
+  ansible.posix.firewalld:
+    port: "{{ rocketmq_console_port }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  when:
+    - ansible_os_family == "RedHat"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+    - "'rocketmq_console' in group_names"
+    - rocketmq_console_enabled | default(false) | bool
+  tags: firewall
+
+- name: 根据安装方式执行基础安装
+  ansible.builtin.include_tasks: "{{ rocketmq_install_method }}_install.yml"
+  tags: install
+
+- name: 部署 Name Server 组件
+  ansible.builtin.include_tasks: namesrv.yml
+  when: "'rocketmq_namesrv' in group_names"
+  tags: namesrv
+
+- name: 部署 Broker 组件
+  ansible.builtin.include_tasks: broker.yml
+  when: "'rocketmq_broker_master' in group_names or 'rocketmq_broker_slave' in group_names"
+  tags: broker
+
+- name: 部署 RocketMQ Console（可选）
+  ansible.builtin.include_tasks: console.yml
+  when:
+    - "'rocketmq_console' in group_names"
+    - rocketmq_console_enabled | default(false) | bool
+  tags: console

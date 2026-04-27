@@ -1,0 +1,44 @@
+# {{ ansible_managed }}
+# RocketMQ Broker 配置文件 - 由 Ansible 管理
+# Broker 名称: {{ broker_name }}
+# 角色: {{ broker_role }}
+
+# ===== 集群与身份 =====
+brokerClusterName={{ rocketmq_cluster_name | default('DefaultCluster') }}
+brokerName={{ broker_name }}
+brokerId={% if broker_role in ['ASYNC_MASTER', 'SYNC_MASTER'] %}0{% else %}{{ broker_id | default(1) }}{% endif %}
+brokerRole={{ broker_role }}
+
+# ===== 网络 =====
+listenPort={{ rocketmq_broker_port | default(10911) }}
+
+# NameServer 列表（从 inventory 自动生成）
+namesrvAddr={% for host in groups['rocketmq_namesrv'] %}{{ hostvars[host]['ansible_host'] }}:{{ rocketmq_namesrv_port | default(9876) }}{% if not loop.last %};{% endif %}{% endfor %}
+
+# ===== 存储路径 =====
+storePathRootDir={{ rocketmq_store_path_root_dir }}
+storePathCommitLog={{ rocketmq_store_path_commitlog }}
+storePathConsumeQueue={{ rocketmq_store_path_consumequeue }}
+storePathIndex={{ rocketmq_store_path_index }}
+storePathCheckpoint={{ rocketmq_store_path_checkpoint }}
+storePathAbort={{ rocketmq_store_path_abort }}
+
+# ===== 磁盘与内存映射 =====
+diskMaxUsedSpaceRatio={{ rocketmq_disk_max_used_space_ratio | default(88) }}
+mappedFileSizeCommitLog={{ rocketmq_mapped_file_size_commitlog | default('1G') }}
+mappedFileSizeConsumeQueue={{ rocketmq_mapped_file_size_consume_queue | default(300000) }}
+
+# ===== 刷盘与同步 =====
+flushDiskType={{ rocketmq_flush_disk_type | default('ASYNC_FLUSH') }}
+syncFlushTimeout=5000
+
+# ===== 功能开关 =====
+autoCreateTopicEnable={{ rocketmq_auto_create_topic_enable | default(true) | lower }}
+autoCreateSubscriptionGroup={{ rocketmq_auto_create_subscription_group | default(true) | lower }}
+aclEnable={{ rocketmq_acl_enable | default(false) | lower }}
+
+# ===== 延迟消息 =====
+messageDelayLevel={{ rocketmq_message_delay_level | default('1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h') }}
+
+# ===== 日志路径（由启动脚本通过环境变量覆盖，此处仅作注释） =====
+# LOG_HOME / ROCKETMQ_HOME 等在 systemd 服务或容器配置中指定

@@ -1,0 +1,42 @@
+# {{ ansible_managed }}
+# ZooKeeper 配置文件 - 由 Ansible 管理
+# 架构: {{ zookeeper_architecture }} | 节点 ID: {{ zk_id | default(1) }}
+
+# 时间单位（毫秒）
+tickTime={{ zookeeper_tick_time | default(2000) }}
+
+# Follower 连接 Leader 的超时（tick 倍数）
+initLimit={{ zookeeper_init_limit | default(10) }}
+
+# Follower 同步 Leader 的超时（tick 倍数）
+syncLimit={{ zookeeper_sync_limit | default(5) }}
+
+# 数据目录（需与 myid 配合使用）
+dataDir={{ zookeeper_data_dir }}
+
+# 事务日志目录（建议与 dataDir 分离，提高性能）
+dataLogDir={{ zookeeper_log_dir }}
+
+# 客户端端口
+clientPort={{ zookeeper_client_port }}
+
+# 最大客户端连接数（0 表示无限制）
+maxClientCnxns={{ zookeeper_max_client_connections | default(2000) }}
+
+# 自动清理快照和日志
+autopurge.snapRetainCount={{ zookeeper_autopurge_snap_retain_count | default(10) }}
+autopurge.purgeInterval={{ zookeeper_autopurge_purge_interval | default(1) }}
+
+# 高级调优
+globalOutstandingLimit={{ zookeeper_global_outstanding_limit | default(1000) }}
+preAllocSize={{ zookeeper_pre_alloc_size | default(65536) }}
+snapCount={{ zookeeper_snap_count | default(100000) }}
+
+# 安全认证（如需启用 SASL，请额外配置）
+# authProvider.1=org.apache.zookeeper.server.auth.SASLAuthenticationProvider
+# requireClientAuthScheme=sasl
+
+{% if zookeeper_architecture == 'cluster' %}
+# 集群成员列表
+{{ zookeeper_servers }}
+{% endif %}

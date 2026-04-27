@@ -1,0 +1,20 @@
+---
+# ============================================================
+# RabbitMQ 部署 Playbook
+# 支持 standalone、cluster 架构
+# 执行: ./deploy.sh rabbitmq [--arch <架构>] [--method <安装方式>]
+# ============================================================
+
+- name: 部署 RabbitMQ 节点
+  hosts: rabbitmq
+  become: true
+  gather_facts: true
+  vars:
+    rabbitmq_architecture: "{{ rabbitmq_architecture | default('cluster') }}"
+    rabbitmq_install_method: "{{ rabbitmq_install_method | default(install_method) }}"
+  roles:
+    - role: rabbitmq
+  tags:
+    - rabbitmq
+    - install
+    - config

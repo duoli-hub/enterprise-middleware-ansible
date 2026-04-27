@@ -1,0 +1,20 @@
+---
+# roles/mysql/handlers/main.yml
+# MySQL 服务处理器：重启、重载等动作
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart mysql
+  ansible.builtin.systemd:
+    name: "{{ 'mysqld' if ansible_os_family == 'RedHat' or mysql_install_method == 'binary' else 'mysql' }}"
+    state: restarted
+    daemon_reload: true
+  when: mysql_install_method in ['binary', 'package']
+
+- name: restart docker mysql
+  community.docker.docker_container:
+    name: mysql
+    state: restarted
+  when: mysql_install_method == 'docker'

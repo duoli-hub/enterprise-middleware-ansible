@@ -1,0 +1,52 @@
+---
+# roles/zookeeper/defaults/main.yml
+# Apache ZooKeeper 角色默认变量（最低优先级，可被 group_vars / host_vars 覆盖）
+
+# --- 安装与架构 ---
+zookeeper_install_method: "binary"
+zookeeper_architecture: "cluster"
+zookeeper_version: "3.9.1"
+
+# --- 端口 ---
+zookeeper_client_port: 2181
+zookeeper_peer_port: 2888
+zookeeper_leader_port: 3888
+
+# --- 路径 ---
+zookeeper_install_dir: "{{ base_install_dir }}/zookeeper"
+zookeeper_data_dir: "{{ base_data_dir }}/zookeeper"
+zookeeper_log_dir: "{{ base_log_dir }}/zookeeper"
+
+# --- 用户与组 ---
+zookeeper_user: "{{ middleware_user }}"
+zookeeper_group: "{{ middleware_group }}"
+
+# --- 集群节点列表（自动从 inventory 生成） ---
+# zookeeper_servers 在 group_vars 中定义为模板，此处可提供默认静态值
+zookeeper_servers: "{% for host in groups['zookeeper'] %}server.{{ hostvars[host].zk_id | default(loop.index) }}={{ hostvars[host]['ansible_host'] }}:{{ zookeeper_peer_port }}:{{ zookeeper_leader_port }}{% if not loop.last %} {% endif %}{% endfor %}"
+
+# --- 节点 ID ---
+# 通过主机变量 zk_id 指定，默认为 1
+zookeeper_id: 1
+
+# --- JVM 内存 ---
+zookeeper_heap_size: "2G"
+
+# --- 性能调优 ---
+zookeeper_tick_time: 2000
+zookeeper_init_limit: 10
+zookeeper_sync_limit: 5
+zookeeper_max_client_connections: 2000
+zookeeper_autopurge_snap_retain_count: 10
+zookeeper_autopurge_purge_interval: 1
+zookeeper_global_outstanding_limit: 1000
+zookeeper_pre_alloc_size: 65536
+zookeeper_snap_count: 100000
+
+# --- Docker 镜像 ---
+zookeeper_docker_image: "zookeeper:{{ zookeeper_version }}"
+zookeeper_docker_force_pull: false
+
+# --- 功能开关 ---
+zookeeper_include_system_tuning: true
+zookeeper_update_path: true

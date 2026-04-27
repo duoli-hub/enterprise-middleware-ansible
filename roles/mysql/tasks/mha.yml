@@ -1,0 +1,123 @@
+---
+# roles/mysql/tasks/mha.yml
+# MySQL MHA 高可用配置（Master High Availability）
+# 负责安装 MHA Node（所有 MySQL 节点）和 MHA Manager（管理节点）
+# 并生成 Manager 配置文件
+
+# ============================
+# MHA Node - 在所有 MySQL 节点安装
+# ============================
+- name: 安装 MHA Node 依赖 (RedHat)
+  ansible.builtin.yum:
+    name:
+      - perl-DBD-MySQL
+      - perl-Config-Tiny
+      - perl-Log-Dispatch
+      - perl-Parallel-ForkManager
+      - perl-Time-HiRes
+    state: present
+  when:
+    - ansible_os_family == "RedHat"
+    - "'mysql_master' in group_names or 'mysql_slave' in group_names"
+
+- name: 安装 MHA Node 依赖 (Debian)
+  ansible.builtin.apt:
+    name:
+      - libdbd-mysql-perl
+      - libconfig-tiny-perl
+      - liblog-dispatch-perl
+      - libparallel-forkmanager-perl
+    state: present
+  when:
+    - ansible_os_family == "Debian"
+    - "'mysql_master' in group_names or 'mysql_slave' in group_names"
+
+- name: 下载 MHA Node rpm/deb（在线）
+  ansible.builtin.get_url:
+    url: "{{ mha_node_download_url | default('https://github.com/yoshinorim/mha4mysql-node/releases/download/v0.58/mha4mysql-node-0.58-0.el7.noarch.rpm') }}"
+    dest: "/tmp/mha4mysql-node.rpm"
+  when: install_mode == "online" and ansible_os_family == "RedHat"
+  register: mha_node_download_rpm
+
+- name: 安装 MHA Node rpm
+  ansible.builtin.yum:
+    name: /tmp/mha4mysql-node.rpm
+    state: present
+  when: mha_node_download_rpm is changed or ansible_os_family == "RedHat"
+
+- name: 安装 MHA Node deb（Debian）
+  ansible.builtin.apt:
+    deb: "{{ mha_node_deb_url | default('https://github.com/yoshinorim/mha4mysql-node/releases/download/v0.58/mha4mysql-node_0.58_all.deb') }}"
+  when: ansible_os_family == "Debian"
+
+# ============================
+# MHA Manager - 仅在 mysql_mha_manager 组安装
+# ============================
+- name: 安装 MHA Manager 依赖 (RedHat)
+  ansible.builtin.yum:
+    name:
+      - perl-DBD-MySQL
+      - perl-Config-Tiny
+      - perl-Log-Dispatch
+      - perl-Parallel-ForkManager
+      - perl-Time-HiRes
+      - perl-Module-Install
+    state: present
+  when:
+    - ansible_os_family == "RedHat"
+    - "'mysql_mha_manager' in group_names"
+
+- name: 下载 MHA Manager rpm（在线）
+  ansible.builtin.get_url:
+    url: "{{ mha_manager_download_url | default('https://github.com/yoshinorim/mha4mysql-manager/releases/download/v0.58/mha4mysql-manager-0.58-0.el7.noarch.rpm') }}"
+    dest: "/tmp/mha4mysql-manager.rpm"
+  when: install_mode == "online" and ansible_os_family == "RedHat" and 'mysql_mha_manager' in group_names
+  register: mha_manager_download
+
+- name: 安装 MHA Manager rpm
+  ansible.builtin.yum:
+    name: /tmp/mha4mysql-manager.rpm
+    state: present
+  when: mha_manager_download is changed and 'mysql_mha_manager' in group_names
+
+- name: 安装 MHA Manager deb（Debian）
+  ansible.builtin.apt:
+    deb: "{{ mha_manager_deb_url | default('https://github.com/yoshinorim/mha4mysql-manager/releases/download/v0.58/mha4mysql-manager_0.58_all.deb') }}"
+  when: ansible_os_family == "Debian" and 'mysql_mha_manager' in group_names
+
+- name: 创建 MHA 配置目录
+  ansible.builtin.file:
+    path: "{{ mysql_mha_config_dir }}"
+    state: directory
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    mode: "0750"
+  when: "'mysql_mha_manager' in group_names"
+
+- name: 生成 MHA Manager 配置文件
+  ansible.builtin.template:
+    src: mha_manager.conf.j2
+    dest: "{{ mysql_mha_config_dir }}/mha_manager.conf"
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    mode: "0640"
+  when: "'mysql_mha_manager' in group_names"
+
+- name: 创建 MHA Manager 工作目录
+  ansible.builtin.file:
+    path: "{{ mysql_mha_manager_workdir }}"
+    state: directory
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    mode: "0750"
+  when: "'mysql_mha_manager' in group_names"
+
+- name: 检查 MHA Manager SSH 免密连接（所有 MySQL 节点）
+  ansible.builtin.command: >
+    ssh -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o ConnectTimeout=5
+    {{ hostvars[item]['ansible_host'] }} "echo OK"
+  loop: "{{ groups['mysql_master'] + groups['mysql_slave'] }}"
+  register: ssh_check
+  changed_when: false
+  failed_when: ssh_check.rc != 0
+  when: "'mysql_mha_manager' in group_names"

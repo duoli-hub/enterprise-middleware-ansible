@@ -1,0 +1,84 @@
+---
+# roles/redis/tasks/k8s_install.yml
+# Redis Kubernetes 原生 YAML 部署（k8s_yaml 安装方式）
+# 通过 kubernetes.core 模块应用资源清单
+# 需要控制节点已配置 kubeconfig 或集群内服务账号
+# 支持 standalone、cluster 架构（通过模板区分）
+
+- name: 验证 Kubernetes 连接与权限
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: kube-system
+  register: k8s_connection_check
+  failed_when: k8s_connection_check.resources | length == 0
+
+- name: 设置 Kubernetes 部署命名空间
+  ansible.builtin.set_fact:
+    redis_k8s_namespace: "{{ redis_k8s_namespace | default('redis') }}"
+
+- name: 创建 Redis 命名空间（如果不存在）
+  kubernetes.core.k8s:
+    name: "{{ redis_k8s_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+  tags: namespace
+
+- name: 生成 Redis ConfigMap 资源定义
+  ansible.builtin.template:
+    src: redis-configmap.yaml.j2
+    dest: "/tmp/redis-configmap-{{ redis_k8s_namespace }}.yaml"
+    mode: "0640"
+
+- name: 应用 Redis ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    src: "/tmp/redis-configmap-{{ redis_k8s_namespace }}.yaml"
+    namespace: "{{ redis_k8s_namespace }}"
+    apply: yes
+  tags: config
+
+- name: 生成 Redis Headless Service 资源定义
+  ansible.builtin.template:
+    src: redis-service.yaml.j2
+    dest: "/tmp/redis-service-{{ redis_k8s_namespace }}.yaml"
+    mode: "0640"
+
+- name: 应用 Redis Service
+  kubernetes.core.k8s:
+    state: present
+    src: "/tmp/redis-service-{{ redis_k8s_namespace }}.yaml"
+    namespace: "{{ redis_k8s_namespace }}"
+    apply: yes
+  tags: service
+
+- name: 生成 Redis StatefulSet 资源定义
+  ansible.builtin.template:
+    src: redis-statefulset.yaml.j2
+    dest: "/tmp/redis-statefulset-{{ redis_k8s_namespace }}.yaml"
+    mode: "0640"
+
+- name: 应用 Redis StatefulSet
+  kubernetes.core.k8s:
+    state: present
+    src: "/tmp/redis-statefulset-{{ redis_k8s_namespace }}.yaml"
+    namespace: "{{ redis_k8s_namespace }}"
+    apply: yes
+    wait: true
+    wait_timeout: "{{ redis_k8s_wait_timeout | default(300) }}"
+  tags: statefulset
+
+- name: 等待 Redis Pod 就绪
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ redis_k8s_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/name=redis"
+  register: redis_pods
+  until:
+    - redis_pods.resources | length > 0
+    - redis_pods.resources | map(attribute='status.phase') | select('equalto', 'Running') | list | length == (redis_replicas | default(1) | int)
+  retries: 30
+  delay: 10
+  tags: verify

@@ -1,0 +1,98 @@
+---
+# roles/kafka/tasks/binary_install.yml
+# Apache Kafka 二进制安装
+# 支持在线下载与离线复制、解压、配置环境变量及数据目录
+
+- name: 设置 Kafka 归档文件名
+  ansible.builtin.set_fact:
+    kafka_basename: "kafka_{{ kafka_scala_version }}-{{ kafka_version }}"
+
+- name: 下载 Kafka 二进制包（在线模式）
+  ansible.builtin.get_url:
+    url: "{{ kafka_download_url | default('https://downloads.apache.org/kafka/' + kafka_version + '/' + kafka_basename + '.tgz') }}"
+    dest: "/tmp/{{ kafka_basename }}.tgz"
+    mode: "0644"
+    checksum: "{{ kafka_binary_checksum | default(omit) }}"
+  when: install_mode == "online"
+
+- name: 复制本地离线包（离线模式）
+  ansible.builtin.copy:
+    src: "{{ kafka_offline_package | default(playbook_dir + '/files/' + kafka_basename + '.tgz') }}"
+    dest: "/tmp/{{ kafka_basename }}.tgz"
+    mode: "0644"
+  when: install_mode == "offline"
+
+- name: 创建 Kafka 安装目录
+  ansible.builtin.file:
+    path: "{{ kafka_install_dir | default(base_install_dir + '/kafka') }}"
+    state: directory
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    mode: "0755"
+
+- name: 解压 Kafka 二进制包
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ kafka_basename }}.tgz"
+    dest: "{{ kafka_install_dir | default(base_install_dir + '/kafka') }}"
+    remote_src: true
+    creates: "{{ kafka_install_dir | default(base_install_dir + '/kafka') }}/bin/kafka-server-start.sh"
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    extra_opts:
+      - --strip-components=1
+  notify: restart kafka
+
+- name: 创建 Kafka 数据目录
+  ansible.builtin.file:
+    path: "{{ kafka_data_dir }}"
+    state: directory
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 Kafka 日志目录
+  ansible.builtin.file:
+    path: "{{ kafka_log_dir }}"
+    state: directory
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 将 Kafka 二进制路径加入系统 PATH
+  ansible.builtin.copy:
+    dest: /etc/profile.d/kafka.sh
+    content: |
+      export PATH=$PATH:{{ kafka_install_dir | default(base_install_dir + '/kafka') }}/bin
+    mode: "0644"
+  when: kafka_update_path | default(true) | bool
+
+- name: 生成 KRaft 模式 server.properties（如启用）
+  ansible.builtin.template:
+    src: kraft_server.properties.j2
+    dest: "{{ kafka_install_dir | default(base_install_dir + '/kafka') }}/config/kraft_server.properties"
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    mode: "0640"
+  when: kafka_kraft_enabled | default(true) | bool
+  notify: restart kafka
+
+- name: 生成 ZooKeeper 模式 server.properties（如禁用 KRaft）
+  ansible.builtin.template:
+    src: server.properties.j2
+    dest: "{{ kafka_install_dir | default(base_install_dir + '/kafka') }}/config/server.properties"
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    mode: "0640"
+  when: not (kafka_kraft_enabled | default(true) | bool)
+  notify: restart kafka
+
+- name: 创建 Kafka systemd 服务文件
+  ansible.builtin.template:
+    src: kafka.service.j2
+    dest: /etc/systemd/system/kafka.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart kafka

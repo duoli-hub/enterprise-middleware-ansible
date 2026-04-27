@@ -1,0 +1,62 @@
+---
+# roles/nginx/tasks/keepalived_ha.yml
+# Nginx + Keepalived 高可用架构配置
+# 适用于 nginx_architecture == 'keepalived_ha'
+# 本任务确保 Nginx 作为负载均衡器运行，并在多个节点间通过 Keepalived 实现 VIP 漂移
+
+- name: 包含负载均衡配置（确保 Nginx upstream 已生成）
+  ansible.builtin.include_tasks: load_balancer.yml
+  when: nginx_include_lb_task | default(true) | bool
+
+- name: 安装 Keepalived（RedHat 系）
+  ansible.builtin.yum:
+    name: keepalived
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: 安装 Keepalived（Debian 系）
+  ansible.builtin.apt:
+    name: keepalived
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: 创建 Keepalived 脚本存放目录
+  ansible.builtin.file:
+    path: /usr/local/bin
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 Nginx 健康检查脚本
+  ansible.builtin.template:
+    src: chk_nginx.sh.j2
+    dest: "{{ nginx_keepalived_track_script_path | default('/usr/local/bin/chk_nginx.sh') }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 Keepalived 状态切换通知脚本（可选）
+  ansible.builtin.template:
+    src: notify.sh.j2
+    dest: "{{ nginx_keepalived_notify_script_path | default('/usr/local/bin/notify.sh') }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: nginx_keepalived_notify_script is defined
+
+- name: 生成 Keepalived 配置文件
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart keepalived
+
+- name: 启动并启用 Keepalived 服务
+  ansible.builtin.systemd:
+    name: keepalived
+    state: started
+    enabled: true
+    daemon_reload: true

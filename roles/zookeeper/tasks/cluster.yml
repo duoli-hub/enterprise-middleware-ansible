@@ -1,0 +1,48 @@
+---
+# roles/zookeeper/tasks/cluster.yml
+# ZooKeeper 集群架构配置
+# 适用于 zookeeper_architecture == 'cluster'
+# 负责配置 myid、生成 zoo.cfg、启动服务
+
+- name: 验证集群节点数量
+  ansible.builtin.fail:
+    msg: "ZooKeeper 集群至少需要 3 个节点（推荐奇数），当前定义了 {{ groups['zookeeper'] | length }} 个"
+  when: groups['zookeeper'] | length < 3
+
+- name: 确保 ZooKeeper 配置目录存在
+  ansible.builtin.file:
+    path: "{{ zookeeper_install_dir | default(base_install_dir + '/zookeeper') }}/conf"
+    state: directory
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0755"
+
+- name: 创建 ZooKeeper 数据目录中的 myid 文件
+  ansible.builtin.copy:
+    content: "{{ zk_id | default(1) }}"
+    dest: "{{ zookeeper_data_dir }}/myid"
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0644"
+  notify: restart zookeeper
+
+- name: 生成 ZooKeeper 配置文件 zoo.cfg（集群模式）
+  ansible.builtin.template:
+    src: zoo.cfg.j2
+    dest: "{{ zookeeper_install_dir | default(base_install_dir + '/zookeeper') }}/conf/zoo.cfg"
+    owner: "{{ zookeeper_user }}"
+    group: "{{ zookeeper_group }}"
+    mode: "0640"
+  notify: restart zookeeper
+
+- name: 创建 ZooKeeper systemd 服务文件（集群模式）
+  ansible.builtin.template:
+    src: zookeeper.service.j2
+    dest: /etc/systemd/system/zookeeper.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: zookeeper_install_method == 'binary'
+  notify:
+    - reload systemd
+    - restart zookeeper

@@ -1,0 +1,34 @@
+# {{ ansible_managed }}
+# Elasticsearch JVM 选项 - 由 Ansible 管理
+
+# ===== 堆内存 =====
+-Xms{{ elasticsearch_heap_size }}
+-Xmx{{ elasticsearch_heap_size }}
+
+# ===== 垃圾回收器 (G1GC) =====
+{% if elasticsearch_jvm_custom_options is defined and elasticsearch_jvm_custom_options %}
+{% for option in elasticsearch_jvm_custom_options %}
+{{ option }}
+{% endfor %}
+{% else %}
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-XX:G1HeapRegionSize=4m
+-XX:InitiatingHeapOccupancyPercent=30
+-XX:+ParallelRefProcEnabled
+-XX:+DisableExplicitGC
+{% endif %}
+
+# ===== GC 日志 (Java 9+) =====
+-Xlog:gc*,gc+age=trace,safepoint:file={{ elasticsearch_log_dir }}/gc.log:utctime,pid,tags:filecount=32,filesize=64m
+
+# ===== 堆转储 =====
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath={{ elasticsearch_log_dir }}/heapdump.hprof
+-XX:ErrorFile={{ elasticsearch_log_dir }}/hs_err_pid%p.log
+
+# ===== 其他 =====
+-XX:MaxDirectMemorySize={{ ((ansible_memtotal_mb * 0.25) | int) if (ansible_memtotal_mb is defined) else 2048 }}m
+-Djava.security.manager=allow
+-Djava.awt.headless=true
+-Dfile.encoding=UTF-8

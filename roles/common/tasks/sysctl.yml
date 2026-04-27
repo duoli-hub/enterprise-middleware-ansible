@@ -1,0 +1,60 @@
+---
+# roles/common/tasks/sysctl.yml
+# 内核参数调优：部署 sysctl 配置、立即生效，并禁用透明大页
+
+- name: 部署内核参数配置文件
+  ansible.builtin.template:
+    src: sysctl.conf.j2
+    dest: /etc/sysctl.d/99-middleware.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload sysctl
+
+- name: 使新 sysctl 配置立即生效
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-middleware.conf
+  changed_when: false
+  when: ansible_virtualization_type != 'docker'   # 容器内执行 sysctl 可能被拒绝
+
+- name: 禁用透明大页（运行时生效）
+  ansible.builtin.shell: |
+    if [ -f /sys/kernel/mm/transparent_hugepage/enabled ]; then
+      echo never > /sys/kernel/mm/transparent_hugepage/enabled
+    fi
+    if [ -f /sys/kernel/mm/transparent_hugepage/defrag ]; then
+      echo never > /sys/kernel/mm/transparent_hugepage/defrag
+    fi
+  changed_when: false
+  when:
+    - ansible_virtualization_type != 'docker'
+    - system_tuning.sysctl['vm.zone_reclaim_mode'] is defined   # 确认需要禁用 THP 的场景
+
+- name: 创建透明大页禁用 systemd 服务（持久化）
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/disable-thp.service
+    content: |
+      [Unit]
+      Description=Disable Transparent Huge Pages (THP)
+      After=sysinit.target local-fs.target
+      Before=basic.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/sh -c "echo never > /sys/kernel/mm/transparent_hugepage/enabled && echo never > /sys/kernel/mm/transparent_hugepage/defrag"
+
+      [Install]
+      WantedBy=basic.target
+    owner: root
+    group: root
+    mode: "0644"
+  register: thp_service_file
+
+- name: 启用透明大页禁用服务
+  ansible.builtin.systemd:
+    name: disable-thp
+    daemon_reload: yes
+    enabled: yes
+    state: started
+  when:
+    - thp_service_file is changed
+    - ansible_service_mgr == 'systemd'

@@ -1,0 +1,105 @@
+---
+# roles/mysql/tasks/binary_install.yml
+# MySQL 二进制安装：下载 tar.gz → 解压 → 创建目录 → 初始化数据库 → 配置 → systemd 服务
+
+- name: 设置 MySQL 版本与架构变量
+  ansible.builtin.set_fact:
+    mysql_basename: "mysql-{{ mysql_version }}-linux-glibc2.28-{{ 'aarch64' if ansible_architecture == 'aarch64' else 'x86_64' }}"
+
+- name: 下载 MySQL 二进制包（在线模式）
+  ansible.builtin.get_url:
+    url: "{{ mysql_download_url | default('https://dev.mysql.com/get/Downloads/MySQL-' + mysql_version.split('.')[0] + '.' + mysql_version.split('.')[1] + '/' + mysql_basename + '.tar.gz') }}"
+    dest: "/tmp/{{ mysql_basename }}.tar.gz"
+    mode: "0644"
+  when: install_mode == "online"
+  register: mysql_download
+
+- name: 复制本地二进制包（离线模式）
+  ansible.builtin.copy:
+    src: "{{ mysql_offline_package | default(playbook_dir + '/files/' + mysql_basename + '.tar.gz') }}"
+    dest: "/tmp/{{ mysql_basename }}.tar.gz"
+    mode: "0644"
+  when: install_mode == "offline"
+
+- name: 创建 MySQL 安装目录
+  ansible.builtin.file:
+    path: "{{ mysql_basedir }}"
+    state: directory
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    mode: "0755"
+
+- name: 解压 MySQL 二进制包
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ mysql_basename }}.tar.gz"
+    dest: "{{ mysql_basedir }}"
+    remote_src: true
+    creates: "{{ mysql_basedir }}/bin/mysqld"
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    extra_opts:
+      - --strip-components=1
+  notify: restart mysql
+
+- name: 创建 MySQL 数据目录
+  ansible.builtin.file:
+    path: "{{ mysql_datadir }}"
+    state: directory
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 MySQL 日志目录
+  ansible.builtin.file:
+    path: "{{ mysql_logdir }}"
+    state: directory
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 MySQL 运行时目录
+  ansible.builtin.file:
+    path: /var/run/mysqld
+    state: directory
+    owner: "{{ mysql_user | default(middleware_user) }}"
+    group: "{{ mysql_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 生成 MySQL 配置文件
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: /etc/my.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart mysql
+
+- name: 初始化 MySQL 数据库（仅首次）
+  ansible.builtin.command: >
+    {{ mysql_basedir }}/bin/mysqld
+    --initialize-insecure
+    --user={{ mysql_user | default(middleware_user) }}
+    --basedir={{ mysql_basedir }}
+    --datadir={{ mysql_datadir }}
+  args:
+    creates: "{{ mysql_datadir }}/ibdata1"
+  register: mysql_initialize
+  tags: init_database
+
+- name: 设置 MySQL 环境变量
+  ansible.builtin.copy:
+    dest: /etc/profile.d/mysql.sh
+    content: |
+      export PATH=$PATH:{{ mysql_basedir }}/bin
+    mode: "0644"
+
+- name: 创建 MySQL systemd 服务文件
+  ansible.builtin.template:
+    src: mysql.service.j2
+    dest: /etc/systemd/system/mysqld.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart mysql

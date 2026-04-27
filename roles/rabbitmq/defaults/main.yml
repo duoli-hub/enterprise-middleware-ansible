@@ -1,0 +1,74 @@
+---
+# roles/rabbitmq/defaults/main.yml
+# RabbitMQ 角色默认变量（最低优先级，可被 group_vars / host_vars 覆盖）
+
+# --- 安装与架构 ---
+rabbitmq_install_method: "package"
+rabbitmq_architecture: "standalone"
+rabbitmq_version: "3.12.12"
+
+# --- 端口 ---
+rabbitmq_amqp_port: 5672
+rabbitmq_management_port: 15672
+rabbitmq_stream_port: 5552
+rabbitmq_epmd_port: 4369
+rabbitmq_dist_port_range: "25672-25682"
+
+# --- 路径 ---
+rabbitmq_data_dir: "{{ base_data_dir }}/rabbitmq"
+rabbitmq_log_dir: "{{ base_log_dir }}/rabbitmq"
+
+# --- 用户与组 ---
+rabbitmq_user: "{{ middleware_user }}"
+rabbitmq_group: "{{ middleware_group }}"
+
+# --- Erlang Cookie ---
+rabbitmq_erlang_cookie: ""
+
+# --- 管理员账号 ---
+rabbitmq_admin_user: "admin"
+rabbitmq_admin_password: ""
+
+# --- 虚拟主机与策略 ---
+rabbitmq_default_vhost: "/"
+rabbitmq_vhosts: []
+rabbitmq_users: []
+rabbitmq_user_permissions: []
+rabbitmq_policies:
+  - name: "ha-all"
+    pattern: ".*"
+    tags:
+      ha-mode: "all"
+      ha-sync-mode: "automatic"
+rabbitmq_global_parameters: []
+
+# --- 资源限制 ---
+rabbitmq_vm_memory_high_watermark_relative: 0.6
+rabbitmq_disk_free_limit_absolute: "2GB"
+rabbitmq_open_file_limit: 100000
+rabbitmq_max_sockets: 8292
+rabbitmq_num_tcp_acceptors: 10
+
+# --- 插件 ---
+rabbitmq_plugins:
+  - rabbitmq_management
+  - rabbitmq_management_agent
+  - rabbitmq_prometheus
+  - rabbitmq_federation
+  - rabbitmq_stream
+  - rabbitmq_stream_management
+
+# --- 日志 ---
+rabbitmq_log_level: "info"
+
+# --- 集群 ---
+rabbitmq_cluster_name: "rabbitmq-production-cluster"
+
+# --- 功能开关 ---
+rabbitmq_include_system_tuning: true
+rabbitmq_remove_guest: true
+
+# --- Docker 镜像 ---
+rabbitmq_docker_image: "rabbitmq:{{ rabbitmq_version }}-management-alpine"
+rabbitmq_docker_force_pull: false
+rabbitmq_docker_compose_dir: "{{ base_install_dir }}/rabbitmq-compose"

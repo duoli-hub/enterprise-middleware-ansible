@@ -1,0 +1,70 @@
+---
+# roles/rocketmq/tasks/binary_install.yml
+# Apache RocketMQ 二进制安装：下载 -> 解压 -> 目录准备 -> 环境变量
+
+- name: 设置 RocketMQ 归档文件名
+  ansible.builtin.set_fact:
+    rocketmq_basename: "rocketmq-all-{{ rocketmq_version }}-bin-release"
+
+- name: 下载 RocketMQ 二进制包（在线模式）
+  ansible.builtin.get_url:
+    url: "{{ rocketmq_download_url | default('https://dist.apache.org/repos/dist/release/rocketmq/' + rocketmq_version + '/' + rocketmq_basename + '.zip') }}"
+    dest: "/tmp/{{ rocketmq_basename }}.zip"
+    mode: "0644"
+  when: install_mode == "online"
+
+- name: 复制本地离线包（离线模式）
+  ansible.builtin.copy:
+    src: "{{ rocketmq_offline_package | default(playbook_dir + '/files/' + rocketmq_basename + '.zip') }}"
+    dest: "/tmp/{{ rocketmq_basename }}.zip"
+    mode: "0644"
+  when: install_mode == "offline"
+
+- name: 安装 unzip（确保解压工具存在）
+  ansible.builtin.package:
+    name: unzip
+    state: present
+
+- name: 创建 RocketMQ 安装目录
+  ansible.builtin.file:
+    path: "{{ rocketmq_install_dir }}"
+    state: directory
+    owner: "{{ rocketmq_user }}"
+    group: "{{ rocketmq_group }}"
+    mode: "0755"
+
+- name: 解压 RocketMQ 二进制包
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ rocketmq_basename }}.zip"
+    dest: "{{ rocketmq_install_dir }}"
+    remote_src: true
+    creates: "{{ rocketmq_install_dir }}/bin/mqnamesrv"
+    owner: "{{ rocketmq_user }}"
+    group: "{{ rocketmq_group }}"
+    extra_opts:
+      - -o                         # 覆盖已存在文件
+  notify: restart rocketmq
+
+- name: 创建 RocketMQ 数据目录
+  ansible.builtin.file:
+    path: "{{ rocketmq_data_dir }}"
+    state: directory
+    owner: "{{ rocketmq_user }}"
+    group: "{{ rocketmq_group }}"
+    mode: "0750"
+
+- name: 创建 RocketMQ 日志目录
+  ansible.builtin.file:
+    path: "{{ rocketmq_log_dir }}"
+    state: directory
+    owner: "{{ rocketmq_user }}"
+    group: "{{ rocketmq_group }}"
+    mode: "0750"
+
+- name: 将 RocketMQ 二进制路径加入系统 PATH
+  ansible.builtin.copy:
+    dest: /etc/profile.d/rocketmq.sh
+    content: |
+      export PATH=$PATH:{{ rocketmq_install_dir }}/bin
+    mode: "0644"
+  when: rocketmq_update_path | default(true) | bool

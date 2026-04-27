@@ -1,0 +1,43 @@
+---
+# roles/redis/tasks/compose_install.yml
+# Redis Docker Compose 安装方式：通过 Compose 编排 Redis 实例及 Sentinel 等（单机部署多容器）
+
+- name: 确保 Docker 与 Docker Compose 已安装
+  ansible.builtin.include_tasks: install_docker.yml
+  when: docker_installed is not defined or not docker_installed
+
+- name: 创建 Compose 项目目录
+  ansible.builtin.file:
+    path: "{{ redis_compose_dir | default(base_install_dir + '/redis-compose') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 docker-compose.yml 模板文件
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ redis_compose_dir | default(base_install_dir + '/redis-compose') }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart redis compose
+
+- name: 启动 Redis Compose 栈
+  community.docker.docker_compose_v2:
+    project_src: "{{ redis_compose_dir | default(base_install_dir + '/redis-compose') }}"
+    state: present
+    remove_orphans: true
+  register: compose_result
+
+- name: 等待所有 Redis/Sentinel 容器上报 PONG
+  ansible.builtin.shell: |
+    for svc in $(docker compose -f {{ redis_compose_dir | default(base_install_dir + '/redis-compose') }}/docker-compose.yml ps --services); do
+      docker compose -f {{ redis_compose_dir | default(base_install_dir + '/redis-compose') }}/docker-compose.yml exec -T $svc redis-cli ping || exit 1
+    done
+  changed_when: false
+  retries: 10
+  delay: 5
+  register: compose_health
+  until: compose_health.rc == 0
+  tags: verify

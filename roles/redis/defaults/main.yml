@@ -1,0 +1,99 @@
+---
+# roles/redis/defaults/main.yml
+# Redis 角色默认变量（最低优先级，可被 group_vars / host_vars 覆盖）
+
+# --- 安装与架构 ---
+redis_install_method: "binary"
+redis_architecture: "standalone"
+redis_version: "7.2.4"
+
+# --- 端口 ---
+redis_port: 6379
+redis_sentinel_port: 26379
+
+# --- 密码 ---
+redis_password: ""
+redis_sentinel_password: ""
+
+# --- 持久化 ---
+redis_save:
+  - "900 1"
+  - "300 10"
+  - "60 10000"
+redis_appendonly: "yes"
+redis_appendfsync: "everysec"
+
+# --- 内存 ---
+redis_maxmemory: "4gb"
+redis_maxmemory_policy: "allkeys-lru"
+
+# --- 慢查询 ---
+redis_slowlog_log_slower_than: 10000
+redis_slowlog_max_len: 128
+
+# --- 连接与性能 ---
+redis_tcp_backlog: 511
+redis_timeout: 0
+redis_tcp_keepalive: 300
+redis_maxclients: 10000
+
+# --- 复制 ---
+redis_min_replicas_to_write: 1
+redis_min_replicas_max_lag: 10
+
+# --- Sentinel ---
+redis_sentinel_quorum: 2
+redis_sentinel_down_after_milliseconds: 30000
+redis_sentinel_failover_timeout: 180000
+redis_sentinel_parallel_syncs: 1
+
+# --- 编译安装 ---
+redis_compile_jobs: "{{ ansible_processor_cores }}"
+redis_compile_build_tls: false
+
+# --- 路径 ---
+redis_install_dir: "{{ base_install_dir }}/redis"
+redis_data_dir: "{{ base_data_dir }}/redis"
+redis_log_dir: "{{ base_log_dir }}/redis"
+redis_conf_dir: "/etc/redis"
+
+# --- 用户与组 ---
+redis_user: "{{ middleware_user }}"
+redis_group: "{{ middleware_group }}"
+
+# --- Docker ---
+redis_docker_image: "redis:7.2.4-alpine"
+redis_docker_force_pull: false
+
+# --- Docker Compose ---
+redis_compose_dir: "{{ base_install_dir }}/redis-compose"
+
+# --- Kubernetes (k8s_yaml) ---
+redis_k8s_namespace: "redis"
+redis_k8s_wait_timeout: 300
+redis_replicas: 1
+
+# --- Helm ---
+redis_helm_repo_name: "bitnami"
+redis_helm_repo_url: "https://charts.bitnami.com/bitnami"
+redis_helm_chart: "bitnami/redis"
+redis_helm_chart_version: "18.6.1"
+redis_helm_namespace: "redis"
+redis_helm_release_name: "redis-cluster"
+redis_helm_values: {}
+redis_helm_wait_timeout: "10m"
+redis_helm_atomic: false
+
+# --- 集群 ---
+redis_cluster_min_nodes: 6
+redis_cluster_created_flag: "/etc/redis/cluster_created.flag"
+
+# --- 功能开关 ---
+redis_include_system_tuning: true
+redis_update_path: true
+redis_run_tests: false
+redis_override_systemd: true
+
+# --- 指标 ---
+redis_metrics_enabled: true
+redis_metrics_service_monitor: false

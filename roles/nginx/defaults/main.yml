@@ -1,0 +1,131 @@
+---
+# roles/nginx/defaults/main.yml
+# Nginx 角色默认变量（最低优先级，可被 group_vars / host_vars 覆盖）
+
+# --- 安装与架构 ---
+nginx_install_method: "package"
+nginx_architecture: "standalone"
+nginx_version: "1.24.0"
+
+# --- 端口 ---
+nginx_listen_port: 80
+nginx_listen_ssl_port: 443
+
+# --- 路径 ---
+nginx_conf_dir: "/etc/nginx"
+nginx_log_dir: "{{ base_log_dir }}/nginx"
+nginx_pid_dir: "/var/run/nginx"
+nginx_web_root: "{{ base_data_dir }}/nginx/html"
+
+# --- 用户与组 ---
+nginx_user: "{{ middleware_user }}"
+nginx_group: "{{ middleware_group }}"
+
+# --- 编译安装参数（仅当 nginx_install_method == 'compile' 时生效） ---
+nginx_compile_configure_arguments: >-
+  --prefix=/etc/nginx
+  --sbin-path=/usr/sbin/nginx
+  --modules-path=/usr/lib64/nginx/modules
+  --conf-path=/etc/nginx/nginx.conf
+  --error-log-path={{ nginx_log_dir }}/error.log
+  --http-log-path={{ nginx_log_dir }}/access.log
+  --pid-path={{ nginx_pid_dir }}/nginx.pid
+  --lock-path=/var/run/nginx.lock
+  --user={{ nginx_user }}
+  --group={{ nginx_group }}
+  --with-http_ssl_module
+  --with-http_v2_module
+  --with-http_realip_module
+  --with-http_stub_status_module
+  --with-http_gzip_static_module
+  --with-pcre
+  --with-stream
+  --with-stream_ssl_module
+  --with-http_sub_module
+  --with-http_auth_request_module
+nginx_compile_jobs: "{{ ansible_processor_cores }}"
+nginx_cflags: "-O2 -g"
+
+# --- 性能调优 ---
+nginx_worker_processes: "auto"
+nginx_worker_connections: 65535
+nginx_multi_accept: "on"
+nginx_use: "epoll"
+
+# --- 事件 ---
+nginx_sendfile: "on"
+nginx_tcp_nopush: "on"
+nginx_tcp_nodelay: "on"
+nginx_keepalive_timeout: 65
+nginx_types_hash_max_size: 2048
+nginx_server_tokens: "off"
+nginx_server_names_hash_bucket_size: 128
+nginx_client_max_body_size: "100m"
+nginx_client_body_buffer_size: "128k"
+nginx_client_header_buffer_size: "4k"
+nginx_large_client_header_buffers: "4 32k"
+nginx_output_buffers: "2 32k"
+nginx_postpone_output: 1460
+
+# --- Gzip 压缩 ---
+nginx_gzip:
+  enabled: "on"
+  min_length: 1000
+  comp_level: 5
+  types: "text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript"
+  vary: "on"
+  disable: "msie6"
+
+# --- 代理缓冲区 ---
+nginx_proxy_buffer:
+  buffer_size: "32k"
+  buffers: "4 64k"
+  busy_buffers_size: "128k"
+  temp_file_write_size: "256k"
+  connect_timeout: 60
+  read_timeout: 60
+  send_timeout: 60
+
+# --- 日志 ---
+nginx_access_log: "{{ nginx_log_dir }}/access.log main buffer=32k flush=5s"
+nginx_error_log: "{{ nginx_log_dir }}/error.log warn"
+nginx_error_log_level: "warn"
+
+# --- 状态监控 ---
+nginx_status_enabled: false
+nginx_status_location: "/nginx_status"
+nginx_status_allow: "127.0.0.1"
+
+# --- 负载均衡上游（当架构为 load_balancer 或 keepalived_ha 时有效） ---
+nginx_upstreams: []
+#  - name: "backend"
+#    algorithm: "least_conn"
+#    servers:
+#      - address: "10.0.8.10"
+#        port: 8080
+#        weight: 1
+#        max_fails: 3
+#        fail_timeout: "30s"
+
+# --- SSL/TLS ---
+nginx_ssl_enabled: false
+# nginx_ssl_certificate: "/etc/ssl/certs/server.crt"
+# nginx_ssl_certificate_key: "/etc/ssl/private/server.key"
+
+# --- Keepalived 高可用（keepalived_ha 架构专用） ---
+nginx_keepalived_interface: "eth0"
+nginx_keepalived_priority: "100"
+nginx_keepalived_virtual_router_id: 51
+nginx_keepalived_virtual_ip: "10.0.7.100/24"
+nginx_keepalived_auth_pass: "yoursecret"
+nginx_keepalived_track_script: "chk_nginx"
+nginx_keepalived_notify_script: ""
+
+# --- Docker 镜像 ---
+nginx_docker_image: "nginx:{{ nginx_version }}-alpine"
+nginx_docker_force_pull: false
+
+# --- 功能开关 ---
+nginx_include_system_tuning: true
+nginx_create_default_conf: true
+nginx_include_lb_task: true

@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  {{ ansible_managed }}
+  Apache Tomcat 服务器配置文件 - 由 Ansible 管理
+  架构: {{ tomcat_architecture }} | 实例: {{ tomcat_instance_id | default('1') }}
+-->
+<Server port="{{ tomcat_shutdown_port }}" shutdown="{{ tomcat_shutdown_password | default('SHUTDOWN') }}">
+
+  <!-- ===== 全局 JNDI 资源 ===== -->
+  <GlobalNamingResources>
+    <Resource name="UserDatabase" auth="Container"
+              type="org.apache.catalina.UserDatabase"
+              description="User database that can be updated and saved"
+              factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
+              pathname="conf/tomcat-users.xml" />
+  </GlobalNamingResources>
+
+  <!-- ===== 服务容器 ===== -->
+  <Service name="Catalina">
+
+    <!-- ===== HTTP 连接器 ===== -->
+    <Connector port="{{ tomcat_http_port }}"
+               protocol="HTTP/1.1"
+               connectionTimeout="{{ tomcat_connector_connection_timeout | default(20000) }}"
+               maxThreads="{{ tomcat_connector_max_threads | default(200) }}"
+               minSpareThreads="{{ tomcat_connector_min_spare_threads | default(10) }}"
+               maxConnections="{{ tomcat_connector_max_connections | default(2000) }}"
+               acceptCount="{{ tomcat_connector_accept_count | default(100) }}"
+               keepAliveTimeout="{{ tomcat_connector_keep_alive_timeout | default(10000) }}"
+               maxKeepAliveRequests="{{ tomcat_connector_max_keep_alive_requests | default(100) }}"
+               redirectPort="{{ nginx_listen_ssl_port | default(8443) }}"
+               {% if tomcat_compression is defined and tomcat_compression == 'on' %}
+               compression="on"
+               compressibleMimeTypes="{{ tomcat_compressible_mime_types | default('text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json') }}"
+               compressionMinSize="{{ tomcat_compression_min_size | default(2048) }}"
+               {% endif %}
+               maxHttpRequestHeaderSize="{{ tomcat_max_http_request_header_size | default(65536) }}"
+               maxSwallowSize="{{ tomcat_max_swallow_size | default('16m') }}"
+               URIEncoding="UTF-8" />
+
+    <!-- ===== AJP 连接器（可选） ===== -->
+    {% if tomcat_ajp_enabled | default(false) %}
+    <Connector protocol="AJP/1.3"
+               port="{{ tomcat_ajp_port }}"
+               redirectPort="{{ nginx_listen_ssl_port | default(8443) }}"
+               secret="{{ tomcat_ajp_secret | default('') }}"
+               maxParameterCount="1000"
+               connectionTimeout="20000"
+               maxThreads="200" />
+    {% endif %}
+
+    <!-- ===== 引擎 ===== -->
+    <Engine name="Catalina" defaultHost="localhost" jvmRoute="{{ inventory_hostname }}">
+
+      <!-- ===== 集群配置（会话复制） ===== -->
+      {% if tomcat_cluster_enabled | default(false) %}
+      <Cluster className="org.apache.catalina.ha.tcp.SimpleTcpCluster"
+               channelSendOptions="{{ tomcat_cluster_channel_send_options | default('6') }}">
+        <Manager className="org.apache.catalina.ha.session.BackupManager"
+                 expireSessionsOnShutdown="false"
+                 notifyListenersOnReplication="true"
+                 mapSendOptions="6" />
+        <Channel className="org.apache.catalina.tribes.group.GroupChannel">
+          <Membership className="org.apache.catalina.tribes.membership.McastService"
+                      address="{{ tomcat_cluster_membership_address | default('228.0.0.4') }}"
+                      port="{{ tomcat_cluster_membership_port | default(45564) }}"
+                      frequency="500"
+                      dropTime="3000" />
+          <Receiver className="org.apache.catalina.tribes.transport.nio.NioReceiver"
+                    address="{{ tomcat_cluster_receiver_address | default('auto') }}"
+                    port="{{ tomcat_cluster_receiver_port | default(4000) }}"
+                    autoBind="100"
+                    selectorTimeout="5000"
+                    maxThreads="6" />
+          <Sender className="org.apache.catalina.tribes.transport.ReplicationTransmitter">
+            <Transport className="org.apache.catalina.tribes.transport.nio.PooledParallelSender" />
+          </Sender>
+          <Interceptor className="org.apache.catalina.tribes.group.interceptors.TcpFailureDetector" />
+          <Interceptor className="org.apache.catalina.tribes.group.interceptors.MessageDispatchInterceptor" />
+        </Channel>
+        <Valve className="org.apache.catalina.ha.tcp.ReplicationValve"
+               filter="" />
+        <Deployer className="org.apache.catalina.ha.deploy.FarmWarDeployer"
+                  tempDir="/tmp/war-temp/"
+                  deployDir="{{ tomcat_webapps_dir }}"
+                  watchDir="/tmp/war-listen/"
+                  watchEnabled="false" />
+        <ClusterListener className="org.apache.catalina.ha.session.ClusterSessionListener" />
+      </Cluster>
+      {% endif %}
+
+      <!-- ===== 远程 IP 阀（用于反向代理后获取真实 IP） ===== -->
+      {% if tomcat_remote_ip_valve_enabled | default(false) %}
+      <Valve className="org.apache.catalina.valves.RemoteIpValve"
+             protocolHeader="x-forwarded-proto"
+             remoteIpHeader="x-forwarded-for"
+             internalProxies="{{ tomcat_remote_ip_proxies | default('10.0.0.0/8') }}" />
+      {% endif %}
+
+      <!-- ===== 访问日志 ===== -->
+      <Valve className="org.apache.catalina.valves.AccessLogValve"
+             directory="{{ tomcat_access_log_directory | default(tomcat_log_dir + '/access') }}"
+             prefix="access_log"
+             suffix=".txt"
+             pattern="{{ tomcat_access_log_pattern | default('%h %l %u %t &quot;%r&quot; %s %b %D') }}"
+             resolveHosts="false"
+             renameOnRotate="true" />
+
+      <!-- ===== 虚拟主机 ===== -->
+      <Host name="localhost"
+            appBase="webapps"
+            unpackWARs="true"
+            autoDeploy="true"
+            deployOnStartup="true">
+
+        <!-- ===== 会话持久化 ===== -->
+        {% if tomcat_session_timeout is defined %}
+        <Manager pathname=""
+                 maxActiveSessions="-1"
+                 sessionMaxAliveTime="{{ tomcat_session_timeout * 60 }}" />
+        {% endif %}
+
+        <!-- 应用上下文（如有 war 包可在此处注入） -->
+        <!--
+        <Context path="{{ tomcat_deploy_context_path | default('/myapp') }}"
+                 docBase="{{ tomcat_webapps_dir }}/myapp"
+                 reloadable="true" />
+        -->
+      </Host>
+    </Engine>
+  </Service>
+</Server>

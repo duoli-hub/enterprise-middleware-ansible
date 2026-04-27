@@ -1,0 +1,98 @@
+---
+# roles/nginx/tasks/docker_install.yml
+# Nginx Docker 安装方式：拉取镜像、创建目录、运行容器
+
+- name: 安装 Docker（如果未安装）
+  include_tasks: install_docker.yml
+  when: docker_installed is not defined or not docker_installed
+
+- name: 创建 Nginx 日志目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ nginx_log_dir }}"
+    state: directory
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+    mode: "0755"
+
+- name: 创建 Nginx 配置目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ nginx_conf_dir | default('/etc/nginx') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 创建 Nginx Web 根目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ nginx_web_root }}"
+    state: directory
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+    mode: "0755"
+
+- name: 生成 Nginx 主配置文件（挂载进容器）
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ nginx_conf_dir | default('/etc/nginx') }}/nginx.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart docker nginx
+
+- name: 生成默认站点配置文件（可选）
+  ansible.builtin.template:
+    src: default.conf.j2
+    dest: "{{ nginx_conf_dir | default('/etc/nginx') }}/conf.d/default.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart docker nginx
+  when: nginx_create_default_conf | default(true) | bool
+
+- name: 登录私有镜像仓库（可选）
+  community.docker.docker_login:
+    registry_url: "{{ docker_registry_url | default(omit) }}"
+    username: "{{ docker_registry_username | default(omit) }}"
+    password: "{{ docker_registry_password | default(omit) }}"
+  when: docker_registry_url is defined and docker_registry_username is defined
+  no_log: true
+
+- name: 拉取 Nginx Docker 镜像
+  community.docker.docker_image:
+    name: "{{ nginx_docker_image }}"
+    source: pull
+    tag: "{{ nginx_docker_image_tag | default(omit) }}"
+    force_source: "{{ nginx_docker_force_pull | default(false) }}"
+
+- name: 运行 Nginx 容器
+  community.docker.docker_container:
+    name: nginx
+    image: "{{ nginx_docker_image }}"
+    state: started
+    restart_policy: always
+    container_default_behavior: no_defaults
+    networks:
+      - name: bridge
+    ports:
+      - "{{ nginx_listen_port }}:{{ nginx_listen_port }}"
+      - "{{ nginx_listen_ssl_port }}:{{ nginx_listen_ssl_port }}"
+    volumes:
+      - "{{ nginx_conf_dir | default('/etc/nginx') }}/nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "{{ nginx_conf_dir | default('/etc/nginx') }}/conf.d:/etc/nginx/conf.d:ro"
+      - "{{ nginx_web_root }}:/usr/share/nginx/html:ro"
+      - "{{ nginx_log_dir }}:/var/log/nginx"
+    env:
+      TZ: "{{ timezone | default('Asia/Shanghai') }}"
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+- name: 等待 Nginx 容器健康检查通过
+  ansible.builtin.command: docker exec nginx nginx -t
+  register: nginx_test
+  changed_when: false
+  retries: 10
+  delay: 3
+  until: nginx_test.rc == 0

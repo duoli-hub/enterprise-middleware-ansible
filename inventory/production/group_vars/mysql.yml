@@ -1,0 +1,113 @@
+# ============================================================
+# MySQL 部署变量
+# ============================================================
+
+# --- 版本 ---
+mysql_version: "8.0.36"
+
+# --- 安装方式（覆盖全局 install_method） ---
+# 可选值: binary | package | docker | docker_compose
+mysql_install_method: "{{ install_method }}"
+
+# --- 架构模式 ---
+# 可选值: standalone | master_slave | mha
+mysql_architecture: "master_slave"
+
+# --- 端口 ---
+mysql_port: 3306
+
+# --- 管理账号 ---
+mysql_root_password: "{{ vault_mysql_root_password }}"
+mysql_repl_user: "repl"
+mysql_repl_password: "{{ vault_mysql_repl_password }}"
+mysql_monitor_user: "monitor"
+mysql_monitor_password: "{{ vault_mysql_monitor_password }}"
+
+# --- 路径 ---
+mysql_basedir: "{{ base_install_dir }}/mysql"
+mysql_datadir: "{{ base_data_dir }}/mysql"
+mysql_logdir: "{{ base_log_dir }}/mysql"
+mysql_socket: "/var/run/mysqld/mysqld.sock"
+mysql_pidfile: "/var/run/mysqld/mysqld.pid"
+
+# --- 字符集 ---
+mysql_character_set_server: "utf8mb4"
+mysql_collation_server: "utf8mb4_general_ci"
+
+# --- 连接 ---
+mysql_max_connections: 2000
+mysql_max_user_connections: 1900
+mysql_max_connect_errors: 200
+mysql_wait_timeout: 28800
+mysql_interactive_timeout: 28800
+
+# --- 二进制日志 ---
+mysql_server_id: "{{ mysql_server_id }}"     # 从主机变量中获取
+mysql_binlog_format: "ROW"
+mysql_sync_binlog: 1
+mysql_expire_logs_days: 7
+mysql_max_binlog_size: "1G"
+mysql_binlog_cache_size: "4M"
+
+# --- GTID 复制 ---
+mysql_gtid_mode: "ON"
+mysql_enforce_gtid_consistency: "ON"
+mysql_log_slave_updates: "ON"
+
+# --- InnoDB 存储引擎 ---
+mysql_default_storage_engine: "InnoDB"
+mysql_innodb_buffer_pool_size: "4G"
+mysql_innodb_buffer_pool_instances: 8
+mysql_innodb_log_file_size: "2G"
+mysql_innodb_flush_log_at_trx_commit: 1
+mysql_innodb_flush_method: "O_DIRECT"
+mysql_innodb_io_capacity: 2000
+mysql_innodb_io_capacity_max: 4000
+mysql_innodb_thread_concurrency: 0
+mysql_innodb_read_io_threads: 8
+mysql_innodb_write_io_threads: 8
+mysql_innodb_file_per_table: 1
+mysql_innodb_open_files: 65535
+mysql_innodb_lock_wait_timeout: 50
+
+# --- MyISAM（如有残留表） ---
+mysql_key_buffer_size: "256M"
+mysql_table_open_cache: 4096
+mysql_sort_buffer_size: "4M"
+mysql_read_buffer_size: "2M"
+mysql_read_rnd_buffer_size: "16M"
+
+# --- 查询缓存（MySQL 8.0 已移除，保留用于兼容旧版） ---
+# mysql_query_cache_type: 0
+# mysql_query_cache_size: 0
+
+# --- 慢查询日志 ---
+mysql_slow_query_log: 1
+mysql_slow_query_log_file: "{{ mysql_logdir }}/slow.log"
+mysql_long_query_time: 2
+
+# --- 错误日志 ---
+mysql_log_error: "{{ mysql_logdir }}/error.log"
+
+# --- 安全 ---
+mysql_local_infile: 0
+mysql_secure_auth: 1
+mysql_skip_name_resolve: 1
+
+# --- Docker 镜像 ---
+mysql_docker_image: "mysql:8.0.36"
+
+# --- MHA 相关 ---
+mysql_mha_manager_workdir: "/var/log/mha"
+mysql_mha_user: "mha"
+mysql_mha_password: "{{ vault_mysql_mha_password }}"
+mysql_mha_repl_user: "{{ mysql_repl_user }}"
+mysql_mha_repl_password: "{{ mysql_repl_password }}"
+mysql_mha_ssh_user: "{{ ansible_user }}"
+mysql_mha_ssh_port: 22
+mysql_mha_ping_interval: 3                           # 秒
+mysql_mha_ping_timeout: 5
+mysql_mha_config_dir: "/etc/mha"
+
+# --- 是否包含系统调优 ---
+mysql_include_system_tuning: true

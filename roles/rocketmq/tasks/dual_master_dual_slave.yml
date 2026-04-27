@@ -1,0 +1,51 @@
+---
+# roles/rocketmq/tasks/dual_master_dual_slave.yml
+# RocketMQ 双主双从架构配置
+# 要求定义 rocketmq_broker_master 和 rocketmq_broker_slave 组
+# 通过主机变量 broker_name 与 broker_role 区分不同 Broker 实例
+
+- name: 验证双主双从所需的主机组
+  ansible.builtin.fail:
+    msg: "双主双从架构需要定义 rocketmq_broker_master 和 rocketmq_broker_slave 组"
+  when:
+    - groups['rocketmq_broker_master'] | default([]) | length == 0
+    - groups['rocketmq_broker_slave'] | default([]) | length == 0
+
+- name: 为主节点生成 broker.conf
+  ansible.builtin.template:
+    src: broker.conf.j2
+    dest: "{{ rocketmq_install_dir }}/conf/broker-{{ broker_name }}.conf"
+    owner: "{{ rocketmq_user }}"
+    group: "{{ rocketmq_group }}"
+    mode: "0640"
+  when: "'rocketmq_broker_master' in group_names"
+  notify: restart broker
+
+- name: 为从节点生成 broker.conf
+  ansible.builtin.template:
+    src: broker.conf.j2
+    dest: "{{ rocketmq_install_dir }}/conf/broker-{{ broker_name }}.conf"
+    owner: "{{ rocketmq_user }}"
+    group: "{{ rocketmq_group }}"
+    mode: "0640"
+  when: "'rocketmq_broker_slave' in group_names"
+  notify: restart broker
+
+- name: 创建 systemd 服务文件（Broker）
+  ansible.builtin.template:
+    src: rocketmq-broker.service.j2
+    dest: "/etc/systemd/system/rocketmq-broker-{{ broker_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart broker
+
+- name: 启动并启用 Broker 服务
+  ansible.builtin.systemd:
+    name: "rocketmq-broker-{{ broker_name }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: rocketmq_install_method in ['binary']

@@ -1,0 +1,32 @@
+# {{ ansible_managed }}
+# Keepalived 配置文件 - 由 Ansible 管理（配合 Nginx 高可用）
+# 主机名: {{ inventory_hostname }} | 优先级: {{ nginx_keepalived_priority | default('100') }}
+
+vrrp_script chk_nginx {
+    script       "{{ nginx_keepalived_track_script | default('/usr/local/bin/chk_nginx.sh') }}"
+    interval     2                       # 检查间隔（秒）
+    weight       -20                     # 脚本失败时降低优先级
+    fall         3                       # 连续失败次数判定为 down
+    rise         2                       # 连续成功次数判定为 up
+}
+
+vrrp_instance VI_1 {
+    state             {{ nginx_keepalived_state | default(nginx_keepalived_priority | int > 100 or 'BACKUP') }}
+    interface         {{ nginx_keepalived_interface | default('eth0') }}
+    virtual_router_id {{ nginx_keepalived_virtual_router_id | default(51) }}
+    priority          {{ nginx_keepalived_priority | default(100) }}
+    advert_int        1
+    authentication {
+        auth_type PASS
+        auth_pass {{ nginx_keepalived_auth_pass | default('yoursecret') }}
+    }
+    virtual_ipaddress {
+        {{ nginx_keepalived_virtual_ip | default('10.0.7.100/24') }} dev {{ nginx_keepalived_interface | default('eth0') }}
+    }
+    track_script {
+        chk_nginx
+    }
+    {% if nginx_keepalived_notify_script is defined %}
+    notify         "{{ nginx_keepalived_notify_script }}"
+    {% endif %}
+}

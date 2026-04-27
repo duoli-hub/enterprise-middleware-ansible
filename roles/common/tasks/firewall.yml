@@ -1,0 +1,79 @@
+---
+# roles/common/tasks/firewall.yml
+# 防火墙管理：根据操作系统启用并配置基础防火墙策略
+# 默认开放 SSH 端口及通过 firewall_allowed_ports 指定的端口
+# 可通过 disable_firewall_management 变量跳过所有操作
+
+- name: 检查是否需要管理防火墙
+  ansible.builtin.meta: end_play
+  when: disable_firewall_management | default(false) | bool
+  tags:
+    - firewall
+
+- name: 设置默认允许端口（如果未定义）
+  ansible.builtin.set_fact:
+    firewall_allowed_ports: "{{ firewall_allowed_ports | default([ansible_port | default(22)]) }}"
+  tags:
+    - firewall
+
+- name: RedHat 系 - 安装并启动 firewalld
+  when: ansible_os_family == "RedHat"
+  block:
+    - name: 安装 firewalld
+      ansible.builtin.package:
+        name: firewalld
+        state: present
+      tags:
+        - firewall
+
+    - name: 确保 firewalld 开机自启并运行
+      ansible.builtin.systemd:
+        name: firewalld
+        enabled: true
+        state: started
+      tags:
+        - firewall
+
+    - name: 开放指定端口
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop: "{{ firewall_allowed_ports }}"
+      tags:
+        - firewall
+
+- name: Debian 系 - 安装并启动 ufw
+  when: ansible_os_family == "Debian"
+  block:
+    - name: 安装 ufw
+      ansible.builtin.package:
+        name: ufw
+        state: present
+      tags:
+        - firewall
+
+    - name: 设置 ufw 默认策略为允许传入
+      community.general.ufw:
+        policy: allow
+        direction: incoming
+        log: true
+      tags:
+        - firewall
+
+    - name: 开放指定端口
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: "{{ firewall_allowed_ports }}"
+      tags:
+        - firewall
+
+    - name: 启用 ufw
+      community.general.ufw:
+        state: enabled
+        policy: allow
+      tags:
+        - firewall

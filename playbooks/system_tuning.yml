@@ -1,0 +1,16 @@
+---
+# ============================================================
+# 独立系统调优 Playbook
+# 可用于在部署中间件前单独执行，或由其他 playbook 调用
+# 执行: ansible-playbook -i inventory/production/hosts.ini playbooks/system_tuning.yml
+# ============================================================
+
+- name: 对所有目标主机执行系统调优
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    # 可在此覆盖部分调优参数，默认已定义在 group_vars/all.yml
+    system_tuning_enabled: true
+  roles:
+    - role: common

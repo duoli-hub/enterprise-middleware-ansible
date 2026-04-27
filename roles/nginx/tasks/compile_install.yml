@@ -1,0 +1,112 @@
+---
+# roles/nginx/tasks/compile_install.yml
+# Nginx 源码编译安装：下载 → 编译 → 安装 → 配置 systemd 服务
+# 可自定义编译参数、模块；支持在线/离线
+
+- name: 安装编译依赖 - RedHat 系
+  ansible.builtin.yum:
+    name:
+      - gcc
+      - gcc-c++
+      - make
+      - pcre-devel
+      - zlib-devel
+      - openssl-devel
+      - libxml2-devel
+      - libxslt-devel
+      - perl-ExtUtils-Embed
+    state: present
+    update_cache: true
+  when: ansible_os_family == "RedHat"
+
+- name: 安装编译依赖 - Debian 系
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - libpcre3
+      - libpcre3-dev
+      - zlib1g
+      - zlib1g-dev
+      - libssl-dev
+      - libxml2-dev
+      - libxslt1-dev
+      - perl
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+- name: 下载 Nginx 源码包（在线模式）
+  ansible.builtin.get_url:
+    url: "{{ nginx_download_url | default('https://nginx.org/download/nginx-' + nginx_version + '.tar.gz') }}"
+    dest: "/tmp/nginx-{{ nginx_version }}.tar.gz"
+    mode: "0644"
+  when: install_mode == "online"
+
+- name: 复制本地源码包（离线模式）
+  ansible.builtin.copy:
+    src: "{{ nginx_offline_source | default(playbook_dir + '/files/nginx-' + nginx_version + '.tar.gz') }}"
+    dest: "/tmp/nginx-{{ nginx_version }}.tar.gz"
+    mode: "0644"
+  when: install_mode == "offline"
+
+- name: 解压 Nginx 源码
+  ansible.builtin.unarchive:
+    src: "/tmp/nginx-{{ nginx_version }}.tar.gz"
+    dest: "/tmp"
+    remote_src: true
+    creates: "/tmp/nginx-{{ nginx_version }}/configure"
+
+- name: 执行 configure 脚本
+  ansible.builtin.command: >
+    ./configure {{ nginx_compile_configure_arguments | default('') }}
+  args:
+    chdir: "/tmp/nginx-{{ nginx_version }}"
+  environment:
+    CFLAGS: "{{ nginx_cflags | default('-O2 -g') }}"
+  register: nginx_configure
+
+- name: 编译 Nginx
+  ansible.builtin.make:
+    chdir: "/tmp/nginx-{{ nginx_version }}"
+    jobs: "{{ nginx_compile_jobs | default(ansible_processor_cores) }}"
+
+- name: 安装 Nginx
+  ansible.builtin.make:
+    chdir: "/tmp/nginx-{{ nginx_version }}"
+    target: install
+
+- name: 创建 Nginx 日志目录
+  ansible.builtin.file:
+    path: "{{ nginx_log_dir }}"
+    state: directory
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+    mode: "0755"
+
+- name: 创建 Nginx PID 目录
+  ansible.builtin.file:
+    path: "{{ nginx_pid_dir | default('/var/run/nginx') }}"
+    state: directory
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+    mode: "0755"
+
+- name: 生成 Nginx 主配置文件
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ nginx_conf_dir | default('/etc/nginx') }}/nginx.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart nginx
+
+- name: 创建 Nginx systemd 服务文件
+  ansible.builtin.template:
+    src: nginx.service.j2
+    dest: /etc/systemd/system/nginx.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart nginx

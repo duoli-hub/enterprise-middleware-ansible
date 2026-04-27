@@ -1,0 +1,45 @@
+---
+# roles/redis/tasks/master_slave.yml
+# Redis 主从架构配置
+# - 主节点：常规 redis-server，不设 replicaof
+# - 从节点：通过 redis.conf 中的 replicaof 指向主节点
+# 模板文件 redis.conf.j2 会根据主机所属组自动生成对应配置
+
+- name: 检查 redis_master 组已定义
+  ansible.builtin.fail:
+    msg: "主从架构需要定义 redis_master 组，且组内至少含有一台主机"
+  when: groups['redis_master'] | default([]) | length == 0
+  tags: always
+
+- name: 生成 Redis 配置文件（主从模式）
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: /etc/redis/redis.conf
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0640"
+  notify: restart redis
+
+- name: 部署 Redis systemd 服务文件
+  ansible.builtin.template:
+    src: redis.service.j2
+    dest: /etc/systemd/system/redis.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart redis
+  when: redis_install_method in ['binary', 'package', 'compile']
+
+- name: 等待主节点端口就绪（从节点执行）
+  ansible.builtin.wait_for:
+    host: "{{ hostvars[groups['redis_master'][0]]['ansible_host'] }}"
+    port: "{{ redis_port }}"
+    state: started
+    timeout: 60
+  when:
+    - 'redis_slave' in group_names
+    - redis_install_method not in ['docker', 'docker_compose', 'k8s_yaml', 'k8s_helm']
+  delegate_to: "{{ inventory_hostname }}"
+  tags: connectivity

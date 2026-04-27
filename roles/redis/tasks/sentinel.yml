@@ -1,0 +1,78 @@
+---
+# roles/redis/tasks/sentinel.yml
+# Redis Sentinel 高可用架构配置
+# 仅在 redis_sentinel 组成员上执行
+# 依赖主从配置已完成（master_slave 任务必须提前执行）
+
+- name: 验证 redis_sentinel 组已定义
+  ansible.builtin.fail:
+    msg: "Sentinel 架构需要定义 redis_sentinel 组，且组内至少含有一台主机"
+  when: groups['redis_sentinel'] | default([]) | length == 0
+
+- name: 开放 Sentinel 端口 (RedHat firewalld)
+  ansible.posix.firewalld:
+    port: "{{ redis_sentinel_port }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  when:
+    - ansible_os_family == "RedHat"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+  tags: firewall
+
+- name: 开放 Sentinel 端口 (Debian ufw)
+  community.general.ufw:
+    rule: allow
+    port: "{{ redis_sentinel_port }}"
+    proto: tcp
+  when:
+    - ansible_os_family == "Debian"
+    - enable_firewall | default(true) | bool
+    - disable_firewall_management | default(false) | bool == false
+  tags: firewall
+
+- name: 确保 Redis 配置目录存在
+  ansible.builtin.file:
+    path: /etc/redis
+    state: directory
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 Sentinel 运行时目录
+  ansible.builtin.file:
+    path: /var/run/redis
+    state: directory
+    owner: "{{ redis_user | default(middleware_user) }}"
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 生成 Sentinel 配置文件
+  ansible.builtin.template:
+    src: sentinel.conf.j2
+    dest: /etc/redis/sentinel.conf
+    owner: root
+    group: "{{ redis_group | default(middleware_group) }}"
+    mode: "0640"
+  notify: restart redis-sentinel
+
+- name: 生成 Redis Sentinel systemd 服务文件
+  ansible.builtin.template:
+    src: redis-sentinel.service.j2
+    dest: /etc/systemd/system/redis-sentinel.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart redis-sentinel
+  when: redis_install_method in ['binary', 'package', 'compile']
+
+- name: 启动并启用 Redis Sentinel 服务
+  ansible.builtin.systemd:
+    name: redis-sentinel
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: redis_install_method in ['binary', 'package', 'compile']

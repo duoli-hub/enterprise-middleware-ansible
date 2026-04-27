@@ -1,0 +1,21 @@
+---
+# ============================================================
+# Apache Kafka 部署 Playbook
+# 支持 standalone、KRaft 集群、ZooKeeper 集群架构
+# 执行: ./deploy.sh kafka [--arch <架构>] [--method <安装方式>]
+# ============================================================
+
+- name: 部署 Kafka 集群
+  hosts: kafka_brokers
+  become: true
+  gather_facts: true
+  vars:
+    kafka_architecture: "{{ kafka_architecture | default('cluster') }}"
+    kafka_install_method: "{{ kafka_install_method | default(install_method) }}"
+    kafka_kraft_enabled: "{{ kafka_kraft_enabled | default(true) }}"
+  roles:
+    - role: kafka
+  tags:
+    - kafka
+    - install
+    - config

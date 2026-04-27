@@ -1,0 +1,52 @@
+---
+# roles/rocketmq/tasks/docker_compose_install.yml
+# Apache RocketMQ Docker Compose 安装方式
+# 根据主机所属组（namesrv / broker）生成对应服务的 compose 文件并启动
+
+- name: 确保 Docker 与 Docker Compose 已安装
+  ansible.builtin.include_tasks: install_docker.yml
+  when: docker_installed is not defined or not docker_installed
+
+- name: 创建 Docker Compose 项目目录
+  ansible.builtin.file:
+    path: "{{ rocketmq_docker_compose_dir | default(base_install_dir + '/rocketmq-compose') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 docker-compose.yml 文件
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ rocketmq_docker_compose_dir | default(base_install_dir + '/rocketmq-compose') }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart rocketmq compose
+
+- name: 启动 RocketMQ Compose 栈
+  community.docker.docker_compose_v2:
+    project_src: "{{ rocketmq_docker_compose_dir | default(base_install_dir + '/rocketmq-compose') }}"
+    state: present
+    remove_orphans: true
+  register: compose_result
+
+- name: 等待 NameServer 可用（仅在 namesrv 节点检查）
+  ansible.builtin.command: >
+    docker compose -f {{ rocketmq_docker_compose_dir | default(base_install_dir + '/rocketmq-compose') }}/docker-compose.yml exec -T namesrv bash -c "ss -tlnp | grep :{{ rocketmq_namesrv_port }}"
+  register: namesrv_health
+  changed_when: false
+  retries: 20
+  delay: 5
+  until: namesrv_health.rc == 0
+  when: "'rocketmq_namesrv' in group_names"
+
+- name: 等待 Broker 注册到 NameServer（仅在 broker 节点检查）
+  ansible.builtin.command: >
+    docker compose -f {{ rocketmq_docker_compose_dir | default(base_install_dir + '/rocketmq-compose') }}/docker-compose.yml exec -T broker bash -c "cd /home/rocketmq/rocketmq-{{ rocketmq_version }} && sh bin/mqadmin clusterList -n {{ hostvars[groups['rocketmq_namesrv'][0]]['ansible_host'] }}:{{ rocketmq_namesrv_port }} | grep {{ ansible_host }}"
+  register: broker_health
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: broker_health.rc == 0
+  when: "'rocketmq_broker_master' in group_names or 'rocketmq_broker_slave' in group_names"

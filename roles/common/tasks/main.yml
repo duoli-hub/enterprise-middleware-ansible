@@ -1,0 +1,49 @@
+---
+# roles/common/tasks/main.yml
+# 公共角色入口：依次执行系统调优、安全配置、基础依赖安装及用户创建
+
+- name: 包含系统内核参数调优
+  include_tasks: sysctl.yml
+  when: system_tuning_enabled | default(true) | bool
+  tags:
+    - tuning
+    - sysctl
+
+- name: 包含文件描述符及进程限制调优
+  include_tasks: limits.yml
+  when: system_tuning_enabled | default(true) | bool
+  tags:
+    - tuning
+    - limits
+
+- name: 禁用 SELinux（RedHat 系）
+  include_tasks: selinux.yml
+  when: ansible_os_family == "RedHat"
+  tags:
+    - security
+    - selinux
+
+- name: 配置防火墙规则
+  include_tasks: firewall.yml
+  when: enable_firewall | default(true) | bool
+  tags:
+    - security
+    - firewall
+
+- name: 安装基础依赖包
+  include_tasks: packages.yml
+  tags:
+    - packages
+    - dependencies
+
+- name: 确保中间件运行用户存在
+  ansible.builtin.user:
+    name: "{{ middleware_user }}"
+    group: "{{ middleware_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    state: present
+  when: install_method not in ["docker", "docker_compose", "k8s_yaml", "k8s_helm"]
+  tags:
+    - user

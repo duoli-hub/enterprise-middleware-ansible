@@ -1,0 +1,35 @@
+# {{ ansible_managed }}
+# 中间件专用内核参数调优
+
+# 文件描述符上限
+fs.file-max = {{ system_tuning.sysctl['fs.file_max'] | default(1000000) }}
+fs.nr_open = {{ system_tuning.sysctl['fs.nr_open'] | default(1000000) }}
+
+# TCP 调优
+net.core.somaxconn = {{ system_tuning.sysctl['net.core.somaxconn'] | default(65535) }}
+net.core.netdev_max_backlog = {{ system_tuning.sysctl['net.core.netdev_max_backlog'] | default(65535) }}
+net.ipv4.tcp_max_syn_backlog = {{ system_tuning.sysctl['net.ipv4.tcp_max_syn_backlog'] | default(65535) }}
+net.ipv4.tcp_fin_timeout = {{ system_tuning.sysctl['net.ipv4.tcp_fin_timeout'] | default(10) }}
+net.ipv4.tcp_tw_reuse = {{ system_tuning.sysctl['net.ipv4.tcp_tw_reuse'] | default(1) }}
+net.ipv4.tcp_syncookies = {{ system_tuning.sysctl['net.ipv4.tcp_syncookies'] | default(1) }}
+net.ipv4.ip_local_port_range = {{ system_tuning.sysctl['net.ipv4.ip_local_port_range'] | default('1024 65000') }}
+
+# 缓冲区大小
+net.core.rmem_max = {{ system_tuning.sysctl['net.core.rmem_max'] | default(16777216) }}
+net.core.wmem_max = {{ system_tuning.sysctl['net.core.wmem_max'] | default(16777216) }}
+
+# 虚拟内存
+vm.swappiness = {{ system_tuning.sysctl['vm.swappiness'] | default(10) }}
+vm.dirty_ratio = {{ system_tuning.sysctl['vm.dirty_ratio'] | default(15) }}
+vm.dirty_background_ratio = {{ system_tuning.sysctl['vm.dirty_background_ratio'] | default(5) }}
+vm.overcommit_memory = {{ system_tuning.sysctl['vm.overcommit_memory'] | default(1) }}
+
+# 禁用 zone reclaim（避免性能抖动）
+vm.zone_reclaim_mode = {{ system_tuning.sysctl['vm.zone_reclaim_mode'] | default(0) }}
+
+# Elasticsearch / Redis 要求
+vm.max_map_count = 262144
+
+# 禁用透明大页（运行时，此 sysctl 可能不支持，通过 systemd 服务辅助）
+# 此处仅作为配置参考，实际由 disable-thp.service 保障
+# kernel.numa_balancing = 0

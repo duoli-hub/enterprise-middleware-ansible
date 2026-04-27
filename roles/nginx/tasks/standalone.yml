@@ -1,0 +1,40 @@
+---
+# roles/nginx/tasks/standalone.yml
+# Nginx 单机架构配置
+# 适用于 nginx_architecture == 'standalone'
+# 生成主配置文件及默认站点配置并启动服务
+
+- name: 确保 Nginx 配置目录存在
+  ansible.builtin.file:
+    path: "{{ nginx_conf_dir | default('/etc/nginx') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: 生成 Nginx 主配置文件（单机模式）
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ nginx_conf_dir | default('/etc/nginx') }}/nginx.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart nginx
+
+- name: 生成默认站点配置文件（可选）
+  ansible.builtin.template:
+    src: default.conf.j2
+    dest: "{{ nginx_conf_dir | default('/etc/nginx') }}/conf.d/default.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart nginx
+  when: nginx_create_default_conf | default(true) | bool
+
+- name: 启动并启用 Nginx 服务（仅非容器安装）
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: nginx_install_method in ['package', 'compile']

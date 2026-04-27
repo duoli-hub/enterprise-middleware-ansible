@@ -1,0 +1,64 @@
+# ============================================================
+# 全局变量 - 控制所有中间件的通用行为
+# ============================================================
+
+# --- 安装方式选择 ---
+# 可选值: binary | package | compile | docker | docker_compose | k8s_yaml | k8s_helm
+install_method: "binary"
+
+# --- 安装模式 ---
+# online: 在线从互联网下载
+# offline: 离线从 files/ 目录读取
+install_mode: "online"
+
+# --- 基础路径 ---
+base_install_dir: "/opt"
+base_data_dir: "/data"
+base_log_dir: "/var/log"
+
+# --- 软件包下载源 ---
+download_base_url: "https://archive.apache.org/dist"
+
+# --- 系统用户 ---
+middleware_user: "midware"
+middleware_group: "midware"
+
+# --- 操作系统适配 ---
+# 自动检测，无需手动指定
+os_family: "{{ ansible_os_family }}"      # RedHat / Debian / Suse
+os_distribution: "{{ ansible_distribution }}"  # CentOS / Ubuntu / openEuler / Anolis
+os_version: "{{ ansible_distribution_major_version }}"
+
+# --- 安全配置 ---
+enable_firewall: true
+enable_selinux: false
+
+# --- 系统调优参数 ---
+system_tuning:
+  sysctl:
+    # 文件描述符限制
+    fs.file_max: 1000000
+    fs.nr_open: 1000000
+    # TCP 调优
+    net.core.somaxconn: 65535
+    net.core.netdev_max_backlog: 65535
+    net.ipv4.tcp_max_syn_backlog: 65535
+    net.ipv4.tcp_fin_timeout: 10
+    net.ipv4.tcp_tw_reuse: 1
+    net.ipv4.tcp_syncookies: 1
+    net.ipv4.ip_local_port_range: "1024 65000"
+    net.core.rmem_max: 16777216
+    net.core.wmem_max: 16777216
+    # 虚拟内存
+    vm.swappiness: 10
+    vm.dirty_ratio: 15
+    vm.dirty_background_ratio: 5
+    vm.overcommit_memory: 1
+    # 禁用 Transparent Huge Pages（Redis/ES 要求）
+    vm.zone_reclaim_mode: 0
+  limits:
+    nofile_soft: 65536
+    nofile_hard: 65536
+    nproc_soft: 4096
+    nproc_hard: 4096
+    memlock: "unlimited"

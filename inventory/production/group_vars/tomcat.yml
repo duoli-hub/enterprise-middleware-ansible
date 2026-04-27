@@ -1,0 +1,107 @@
+# ============================================================
+# Apache Tomcat 部署变量
+# ============================================================
+
+# --- 版本 ---
+tomcat_version: "9.0.87"
+
+# --- 安装方式（覆盖全局 install_method） ---
+# 可选值: binary | docker
+tomcat_install_method: "{{ install_method }}"
+
+# --- 架构模式 ---
+# 可选值: standalone | cluster
+tomcat_architecture: "standalone"
+
+# --- 端口 ---
+tomcat_http_port: 8080
+tomcat_shutdown_port: 8005
+tomcat_ajp_port: 8009                      # 若不需要可禁用
+
+# --- 路径 ---
+tomcat_install_dir: "{{ base_install_dir }}/tomcat"
+tomcat_webapps_dir: "{{ base_data_dir }}/tomcat/webapps"
+tomcat_log_dir: "{{ base_log_dir }}/tomcat"
+
+# --- 运行用户 ---
+tomcat_user: "{{ middleware_user }}"
+tomcat_group: "{{ middleware_group }}"
+
+# --- 实例标识（集群模式时使用，可通过主机变量覆盖） ---
+tomcat_instance_id: "{{ tomcat_instance | default(1) }}"
+
+# --- JVM 内存 ---
+tomcat_java_home: "/usr/lib/jvm/java-11"
+tomcat_xms: "2G"
+tomcat_xmx: "2G"
+tomcat_new_size: "512m"
+tomcat_max_new_size: "512m"
+tomcat_metaspace_size: "256m"
+tomcat_max_metaspace_size: "256m"
+
+# --- JVM 其他参数 ---
+tomcat_gc_algo: "G1GC"
+tomcat_gc_options: >-
+  -XX:+UseG1GC
+  -XX:MaxGCPauseMillis=200
+  -XX:InitiatingHeapOccupancyPercent=45
+  -XX:+DisableExplicitGC
+tomcat_dump_on_oom: true
+tomcat_heap_dump_path: "{{ tomcat_log_dir }}/heapdump.hprof"
+tomcat_jmx_enabled: false
+tomcat_jmx_port: 1099
+
+# --- 连接器调优 (HTTP Connector) ---
+tomcat_connector_max_threads: 500
+tomcat_connector_min_spare_threads: 50
+tomcat_connector_max_connections: 2000
+tomcat_connector_accept_count: 200
+tomcat_connector_connection_timeout: 20000
+tomcat_connector_keep_alive_timeout: 10000
+tomcat_connector_max_keep_alive_requests: 100
+
+# --- 请求限制 ---
+tomcat_max_http_request_header_size: 65536
+tomcat_max_swallow_size: "16m"
+tomcat_connection_upload_timeout: 300000
+
+# --- 压缩 ---
+tomcat_compression: "on"
+tomcat_compressible_mime_types: "text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json"
+tomcat_compression_min_size: 2048
+
+# --- 会话与 Cookie ---
+tomcat_session_timeout: 30               # 分钟
+tomcat_cookie_http_only: true
+tomcat_cookie_secure: false
+
+# --- 访问日志 ---
+tomcat_access_log_enabled: true
+tomcat_access_log_pattern: '%h %l %u %t "%r" %s %b %D'
+tomcat_access_log_directory: "{{ tomcat_log_dir }}/access"
+
+# --- 集群配置（当架构为 cluster 时生效） ---
+tomcat_cluster_enabled: "{{ tomcat_architecture == 'cluster' }}"
+tomcat_cluster_membership_interface: "eth0"
+tomcat_cluster_receiver_address: "{{ ansible_host }}"
+tomcat_cluster_receiver_port: 4000
+tomcat_cluster_members: >-
+  {% for host in groups['tomcat'] %}
+  {{ hostvars[host]['ansible_host'] }}{% if not loop.last %},{% endif %}
+  {% endfor %}
+
+# --- 应用部署（可自定义 war 包路径) ---
+# tomcat_deploy_war_url: "https://nexus.example.com/repository/releases/myapp.war"
+# tomcat_deploy_context_path: "/myapp"
+
+# --- 安全管理 ---
+tomcat_shutdown_password: "SHUTDOWN"      # 强烈建议随机生成（通过 vault）
+tomcat_ajp_secret: ""                     # 若使用 AJP 则设置
+tomcat_remote_ip_valve_enabled: false
+tomcat_remote_ip_proxies: "10.0.7.10,10.0.7.11"
+
+# --- Docker 镜像 ---
+tomcat_docker_image: "tomcat:{{ tomcat_version }}-jdk11-temurin"
+
+# --- 是否包含系统调优 ---
+tomcat_include_system_tuning: true

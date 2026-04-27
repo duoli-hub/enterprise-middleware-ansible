@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+# ZooKeeper 配置文件（用于 Kafka 内嵌 ZooKeeper，仅适用于开发/测试环境）
+# 生产环境请使用独立部署的 ZooKeeper 集群，并取消注释 zookeeper.connect 行
+
+# ZooKeeper 数据目录
+dataDir={{ kafka_data_dir | default(base_data_dir + '/kafka') }}/zookeeper
+# ZooKeeper 客户端端口
+clientPort={{ kafka_zookeeper_client_port | default(2181) }}
+# 禁用管理服务器（生产环境按需开启）
+admin.enableServer=false
+
+# 以下为独立 ZooKeeper 集群配置示例（需在 Kafka server.properties 中指定 zookeeper.connect）
+# 若使用独立 ZooKeeper，此文件可忽略
+# server.1=zookeeper1:2888:3888
+# server.2=zookeeper2:2888:3888
+# server.3=zookeeper3:2888:3888

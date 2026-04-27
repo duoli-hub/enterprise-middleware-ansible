@@ -1,0 +1,83 @@
+---
+# roles/kafka/tasks/k8s_install.yml
+# Apache Kafka Kubernetes 原生 YAML 部署（k8s_yaml 安装方式）
+# 使用 kubernetes.core 模块部署 Kafka 到 K8s 集群
+# 支持 KRaft 模式（推荐）和 ZooKeeper 模式（通过模板区分）
+
+- name: 验证 Kubernetes 连接
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: kube-system
+  register: k8s_connection_check
+  failed_when: k8s_connection_check.resources | length == 0
+
+- name: 设置 Kubernetes 部署命名空间
+  ansible.builtin.set_fact:
+    kafka_k8s_namespace: "{{ kafka_k8s_namespace | default('kafka') }}"
+
+- name: 创建 Kafka 命名空间
+  kubernetes.core.k8s:
+    name: "{{ kafka_k8s_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+  tags: namespace
+
+- name: 生成 Kafka ConfigMap
+  ansible.builtin.template:
+    src: kafka-configmap.yaml.j2
+    dest: "/tmp/kafka-configmap-{{ kafka_k8s_namespace }}.yaml"
+    mode: "0640"
+
+- name: 应用 Kafka ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    src: "/tmp/kafka-configmap-{{ kafka_k8s_namespace }}.yaml"
+    namespace: "{{ kafka_k8s_namespace }}"
+    apply: yes
+  tags: config
+
+- name: 生成 Kafka Headless Service
+  ansible.builtin.template:
+    src: kafka-service.yaml.j2
+    dest: "/tmp/kafka-service-{{ kafka_k8s_namespace }}.yaml"
+    mode: "0640"
+
+- name: 应用 Kafka Service
+  kubernetes.core.k8s:
+    state: present
+    src: "/tmp/kafka-service-{{ kafka_k8s_namespace }}.yaml"
+    namespace: "{{ kafka_k8s_namespace }}"
+    apply: yes
+  tags: service
+
+- name: 生成 Kafka StatefulSet
+  ansible.builtin.template:
+    src: kafka-statefulset.yaml.j2
+    dest: "/tmp/kafka-statefulset-{{ kafka_k8s_namespace }}.yaml"
+    mode: "0640"
+
+- name: 应用 Kafka StatefulSet
+  kubernetes.core.k8s:
+    state: present
+    src: "/tmp/kafka-statefulset-{{ kafka_k8s_namespace }}.yaml"
+    namespace: "{{ kafka_k8s_namespace }}"
+    apply: yes
+    wait: true
+    wait_timeout: "{{ kafka_k8s_wait_timeout | default(300) }}"
+  tags: statefulset
+
+- name: 等待 Kafka Pod 就绪
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ kafka_k8s_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/name=kafka"
+  register: kafka_pods
+  until:
+    - kafka_pods.resources | length > 0
+    - kafka_pods.resources | map(attribute='status.phase') | select('equalto', 'Running') | list | length == (kafka_replicas | default(3) | int)
+  retries: 30
+  delay: 10
+  tags: verify

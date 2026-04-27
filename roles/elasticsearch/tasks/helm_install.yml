@@ -1,0 +1,85 @@
+---
+# roles/elasticsearch/tasks/helm_install.yml
+# 使用 Helm Chart 部署 Elasticsearch
+# 支持从 elastic/elasticsearch 官方仓库安装，并通过 values 定制
+# 依赖 kubernetes.core 集合
+
+- name: 检查 Kubernetes 连接
+  kubernetes.core.k8s_info:
+    kind: Namespace
+    name: kube-system
+  register: k8s_connection
+
+- name: 设置默认 Helm 变量
+  ansible.builtin.set_fact:
+    elasticsearch_helm_repo_name: "{{ elasticsearch_helm_repo_name | default('elastic') }}"
+    elasticsearch_helm_repo_url: "{{ elasticsearch_helm_repo_url | default('https://helm.elastic.co') }}"
+    elasticsearch_helm_chart: "{{ elasticsearch_helm_chart | default('elastic/elasticsearch') }}"
+    elasticsearch_helm_chart_version: "{{ elasticsearch_helm_chart_version | default(elasticsearch_version) }}"
+    elasticsearch_helm_namespace: "{{ elasticsearch_helm_namespace | default('elastic') }}"
+    elasticsearch_helm_release_name: "{{ elasticsearch_helm_release_name | default('elasticsearch') }}"
+
+- name: 创建命名空间
+  kubernetes.core.k8s:
+    name: "{{ elasticsearch_helm_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: 添加 Helm 仓库
+  kubernetes.core.helm_repository:
+    name: "{{ elasticsearch_helm_repo_name }}"
+    url: "{{ elasticsearch_helm_repo_url }}"
+    force_update: true
+
+- name: 更新仓库缓存
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: 部署/升级 Elasticsearch Helm Chart
+  kubernetes.core.helm:
+    name: "{{ elasticsearch_helm_release_name }}"
+    chart_ref: "{{ elasticsearch_helm_chart }}"
+    chart_version: "{{ elasticsearch_helm_chart_version }}"
+    release_namespace: "{{ elasticsearch_helm_namespace }}"
+    create_namespace: false    # 已单独创建
+    values: "{{ elasticsearch_helm_values | default({}) }}"
+    state: present
+    wait: true
+    wait_timeout: "{{ elasticsearch_helm_wait_timeout | default('10m') }}"
+    atomic: "{{ elasticsearch_helm_atomic | default(false) }}"
+  register: helm_result
+
+- name: 显示 Helm 部署信息
+  ansible.builtin.debug:
+    var: helm_result.stdout_lines
+  when: helm_result.stdout_lines is defined
+
+- name: 等待 Elasticsearch Pod 就绪
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ elasticsearch_helm_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/instance={{ elasticsearch_helm_release_name }}"
+  register: es_pods
+  until:
+    - es_pods.resources | length > 0
+    - es_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length == es_pods.resources | length
+  retries: 30
+  delay: 15
+  when: helm_result is success
+
+- name: 获取 Elasticsearch 密码（如果 Chart 自动生成）
+  kubernetes.core.k8s_info:
+    kind: Secret
+    namespace: "{{ elasticsearch_helm_namespace }}"
+    name: "{{ elasticsearch_helm_release_name }}-elastic-user"
+  register: es_secret
+  failed_when: false
+
+- name: 输出访问信息
+  ansible.builtin.debug:
+    msg: |
+      Elasticsearch 通过 Helm 部署完成。
+      获取密码: kubectl get secret --namespace {{ elasticsearch_helm_namespace }} {{ elasticsearch_helm_release_name }}-elastic-user -o jsonpath="{.data.elastic}" | base64 --decode
+      连接地址: {{ elasticsearch_helm_release_name }}-elasticsearch.{{ elasticsearch_helm_namespace }}.svc.cluster.local:9200

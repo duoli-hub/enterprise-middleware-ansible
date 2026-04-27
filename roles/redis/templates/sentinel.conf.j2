@@ -1,0 +1,34 @@
+# {{ ansible_managed }}
+# Redis Sentinel 配置文件 - 由 Ansible 管理
+
+port {{ redis_sentinel_port }}
+daemonize no
+supervised systemd
+pidfile /var/run/redis/sentinel.pid
+logfile {{ redis_log_dir | default(base_log_dir + '/redis') }}/sentinel.log
+dir /tmp
+
+# 监控主节点
+sentinel monitor mymaster {{ hostvars[groups['redis_master'][0]]['ansible_host'] }} {{ redis_port }} {{ redis_sentinel_quorum }}
+
+# 主节点密码
+sentinel auth-pass mymaster {{ redis_password }}
+
+# Sentinel 通信密码（用于 Sentinel 节点间）
+sentinel sentinel-pass {{ redis_sentinel_password | default(redis_password) }}
+
+# 主观下线判定时间（毫秒）
+sentinel down-after-milliseconds mymaster {{ redis_sentinel_down_after_milliseconds | default(30000) }}
+
+# 故障转移超时时间（毫秒）
+sentinel failover-timeout mymaster {{ redis_sentinel_failover_timeout | default(180000) }}
+
+# 并行同步的从节点数
+sentinel parallel-syncs mymaster {{ redis_sentinel_parallel_syncs | default(1) }}
+
+# 通知脚本（可选，根据环境启用）
+# sentinel notification-script mymaster /etc/redis/notify.sh
+# sentinel client-reconfig-script mymaster /etc/redis/reconfig.sh
+
+# ACL 日志（Redis 6+ 支持）
+acllog-max-len 128

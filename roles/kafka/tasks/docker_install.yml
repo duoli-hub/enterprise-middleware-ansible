@@ -1,0 +1,115 @@
+---
+# roles/kafka/tasks/docker_install.yml
+# Apache Kafka Docker 安装方式：拉取镜像、创建目录、运行容器
+# 支持 KRaft 模式和 ZooKeeper 模式，通过变量 kafka_kraft_enabled 区分
+
+- name: 安装 Docker（如果未安装）
+  include_tasks: install_docker.yml
+  when: docker_installed is not defined or not docker_installed
+
+- name: 创建 Kafka 数据目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ kafka_data_dir }}"
+    state: directory
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 创建 Kafka 日志目录（宿主机）
+  ansible.builtin.file:
+    path: "{{ kafka_log_dir }}"
+    state: directory
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    mode: "0750"
+
+- name: 登录私有镜像仓库（可选）
+  community.docker.docker_login:
+    registry_url: "{{ docker_registry_url | default(omit) }}"
+    username: "{{ docker_registry_username | default(omit) }}"
+    password: "{{ docker_registry_password | default(omit) }}"
+  when: docker_registry_url is defined and docker_registry_username is defined
+  no_log: true
+
+- name: 拉取 Kafka Docker 镜像
+  community.docker.docker_image:
+    name: "{{ kafka_docker_image }}"
+    source: pull
+    tag: "{{ kafka_docker_image_tag | default(omit) }}"
+    force_source: "{{ kafka_docker_force_pull | default(false) }}"
+  register: image_pull_result
+
+- name: 运行 Kafka 容器（KRaft 模式）
+  community.docker.docker_container:
+    name: kafka
+    image: "{{ kafka_docker_image }}"
+    state: started
+    restart_policy: always
+    networks:
+      - name: bridge
+    ports:
+      - "{{ kafka_port }}:{{ kafka_port }}"
+      - "{{ kafka_controller_port }}:{{ kafka_controller_port }}"
+    volumes:
+      - "{{ kafka_data_dir }}:/var/lib/kafka/data"
+      - "{{ kafka_log_dir }}:/var/log/kafka"
+    env:
+      KAFKA_NODE_ID: "{{ kafka_broker_id }}"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: >-
+        {%- for host in groups['kafka_brokers'] -%}
+        {{ hostvars[host]['kafka_broker_id'] }}@{{ hostvars[host]['ansible_host'] }}:{{ kafka_controller_port }}{% if not loop.last %},{% endif %}
+        {%- endfor -%}
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:{{ kafka_port }},CONTROLLER://0.0.0.0:{{ kafka_controller_port }}"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://{{ ansible_host }}:{{ kafka_port }}"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "{{ kafka_offsets_topic_replication_factor | default(3) }}"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "{{ kafka_default_replication_factor | default(3) }}"
+      KAFKA_MIN_INSYNC_REPLICAS: "{{ kafka_min_insync_replicas | default(2) }}"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "{{ kafka_transaction_state_log_replication_factor | default(3) }}"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "{{ kafka_transaction_state_log_min_isr | default(2) }}"
+      KAFKA_LOG_RETENTION_HOURS: "{{ kafka_log_retention_hours | default(168) }}"
+      KAFKA_LOG_SEGMENT_BYTES: "{{ kafka_log_segment_bytes | default(1073741824) }}"
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: "{{ kafka_log_retention_check_interval_ms | default(300000) }}"
+      TZ: "{{ timezone | default('Asia/Shanghai') }}"
+  when: kafka_kraft_enabled | default(true) | bool
+
+- name: 运行 Kafka 容器（ZooKeeper 模式）
+  community.docker.docker_container:
+    name: kafka
+    image: "{{ kafka_docker_image }}"
+    state: started
+    restart_policy: always
+    networks:
+      - name: bridge
+    ports:
+      - "{{ kafka_port }}:{{ kafka_port }}"
+    volumes:
+      - "{{ kafka_data_dir }}:/var/lib/kafka/data"
+      - "{{ kafka_log_dir }}:/var/log/kafka"
+    env:
+      KAFKA_BROKER_ID: "{{ kafka_broker_id }}"
+      KAFKA_ZOOKEEPER_CONNECT: "{{ kafka_zookeeper_connect }}"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:{{ kafka_port }}"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://{{ ansible_host }}:{{ kafka_port }}"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "{{ kafka_offsets_topic_replication_factor | default(3) }}"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "{{ kafka_default_replication_factor | default(3) }}"
+      KAFKA_MIN_INSYNC_REPLICAS: "{{ kafka_min_insync_replicas | default(2) }}"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "{{ kafka_transaction_state_log_replication_factor | default(3) }}"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "{{ kafka_transaction_state_log_min_isr | default(2) }}"
+      KAFKA_LOG_RETENTION_HOURS: "{{ kafka_log_retention_hours | default(168) }}"
+      KAFKA_LOG_SEGMENT_BYTES: "{{ kafka_log_segment_bytes | default(1073741824) }}"
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: "{{ kafka_log_retention_check_interval_ms | default(300000) }}"
+      TZ: "{{ timezone | default('Asia/Shanghai') }}"
+  when: not (kafka_kraft_enabled | default(true) | bool)
+
+- name: 等待 Kafka 容器健康检查通过
+  ansible.builtin.command: docker exec kafka kafka-topics --bootstrap-server localhost:{{ kafka_port }} --list
+  register: kafka_topics
+  changed_when: false
+  retries: 20
+  delay: 5
+  until: kafka_topics.rc == 0
+  tags: verify

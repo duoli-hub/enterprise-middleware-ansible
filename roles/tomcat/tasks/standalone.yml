@@ -1,0 +1,39 @@
+---
+# roles/tomcat/tasks/standalone.yml
+# Apache Tomcat 单机架构配置
+# 适用于 tomcat_architecture == 'standalone'
+# 生成 server.xml 及 setenv.sh 并启动服务
+
+- name: 确保 Tomcat 配置目录存在
+  ansible.builtin.file:
+    path: "{{ tomcat_install_dir }}/conf"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0755"
+
+- name: 生成 Tomcat server.xml 配置文件（单机模式）
+  ansible.builtin.template:
+    src: server.xml.j2
+    dest: "{{ tomcat_install_dir }}/conf/server.xml"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0640"
+  notify: restart tomcat
+
+- name: 生成 setenv.sh（JVM 及 GC 参数）
+  ansible.builtin.template:
+    src: setenv.sh.j2
+    dest: "{{ tomcat_install_dir }}/bin/setenv.sh"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0750"
+  notify: restart tomcat
+
+- name: 启动并启用 Tomcat 服务（仅二进制安装）
+  ansible.builtin.systemd:
+    name: tomcat
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: tomcat_install_method == 'binary'

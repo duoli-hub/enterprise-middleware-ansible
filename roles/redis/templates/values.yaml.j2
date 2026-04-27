@@ -1,0 +1,67 @@
+# {{ ansible_managed }}
+# Redis Helm values 模板 - 由 Ansible 管理
+# 使用 Bitnami Redis Chart，根据 redis_architecture 自动调整配置
+
+architecture: {{ redis_architecture if redis_architecture in ['standalone', 'replication'] else 'replication' }}
+
+global:
+  storageClass: ""
+  redis:
+    password: "{{ redis_password }}"
+
+image:
+  registry: docker.io
+  repository: bitnami/redis
+  tag: {{ redis_version }}-debian-11-r0
+
+auth:
+  enabled: true
+  password: "{{ redis_password }}"
+
+master:
+  count: 1
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+  resources:
+    limits:
+      memory: "{{ redis_maxmemory }}"
+      cpu: "2"
+    requests:
+      memory: "{{ redis_maxmemory }}"
+      cpu: "500m"
+  podLabels: {}
+
+replica:
+  replicaCount: {{ 2 if redis_architecture == 'sentinel' else 1 }}
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+  resources:
+    limits:
+      memory: "{{ redis_maxmemory }}"
+      cpu: "2"
+    requests:
+      memory: "{{ redis_maxmemory }}"
+      cpu: "500m"
+
+sentinel:
+  enabled: {{ 'true' if redis_architecture == 'sentinel' else 'false' }}
+  quorum: {{ redis_sentinel_quorum }}
+  resources:
+    limits:
+      memory: "256Mi"
+      cpu: "100m"
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+
+metrics:
+  enabled: {{ redis_metrics_enabled | default(true) | lower }}
+  serviceMonitor:
+    enabled: {{ redis_metrics_service_monitor | default(false) | lower }}
+    namespace: "{{ redis_helm_namespace }}"
+    interval: 30s
+    scrapeTimeout: 10s

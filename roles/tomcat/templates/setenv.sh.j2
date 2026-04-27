@@ -1,0 +1,42 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# Tomcat JVM 参数配置文件 - 由 Ansible 管理
+# 实例: {{ tomcat_instance_id | default('1') }}
+
+{% if tomcat_java_home is defined and tomcat_java_home %}
+export JAVA_HOME="{{ tomcat_java_home }}"
+{% endif %}
+
+# 基础堆内存设置
+CATALINA_OPTS="-Xms{{ tomcat_xms | default('2G') }} -Xmx{{ tomcat_xmx | default('2G') }}"
+
+# 新生代
+CATALINA_OPTS="$CATALINA_OPTS -XX:NewSize={{ tomcat_new_size | default('512m') }} -XX:MaxNewSize={{ tomcat_max_new_size | default('512m') }}"
+
+# 元空间
+CATALINA_OPTS="$CATALINA_OPTS -XX:MetaspaceSize={{ tomcat_metaspace_size | default('256m') }} -XX:MaxMetaspaceSize={{ tomcat_max_metaspace_size | default('256m') }}"
+
+# GC 配置
+{% if tomcat_gc_options is defined and tomcat_gc_options %}
+CATALINA_OPTS="$CATALINA_OPTS {{ tomcat_gc_options }}"
+{% else %}
+CATALINA_OPTS="$CATALINA_OPTS -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:InitiatingHeapOccupancyPercent=45 -XX:+DisableExplicitGC"
+{% endif %}
+
+# OOM 时生成堆转储
+{% if tomcat_dump_on_oom | default(true) %}
+CATALINA_OPTS="$CATALINA_OPTS -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath={{ tomcat_heap_dump_path | default(tomcat_log_dir + '/heapdump.hprof') }}"
+{% endif %}
+
+# GC 日志
+CATALINA_OPTS="$CATALINA_OPTS -Xlog:gc*:file={{ tomcat_log_dir }}/gc.log:time,uptime,level,tags:filecount=10,filesize=20M"
+
+# JMX 监控（可选）
+{% if tomcat_jmx_enabled | default(false) %}
+CATALINA_OPTS="$CATALINA_OPTS -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port={{ tomcat_jmx_port | default(1099) }} -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false"
+{% endif %}
+
+# 其他优化
+CATALINA_OPTS="$CATALINA_OPTS -Djava.awt.headless=true -Dfile.encoding=UTF-8 -server"
+
+export CATALINA_OPTS

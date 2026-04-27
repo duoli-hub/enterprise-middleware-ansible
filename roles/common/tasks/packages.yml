@@ -1,0 +1,45 @@
+---
+# roles/common/tasks/packages.yml
+# 安装通用基础依赖包（适用于各 Linux 发行版）
+# RedHat 系：通过 yum/dnf
+# Debian 系：通过 apt
+
+- name: 安装基础依赖（RedHat 系）
+  ansible.builtin.yum:
+    name:
+      - wget
+      - curl
+      - unzip
+      - tar
+      - gzip
+      - net-tools
+      - python3
+      - openssl
+    state: present
+    update_cache: true
+  when: ansible_os_family == "RedHat"
+
+- name: 安装基础依赖（Debian 系）
+  ansible.builtin.apt:
+    name:
+      - wget
+      - curl
+      - unzip
+      - tar
+      - gzip
+      - net-tools
+      - python3
+      - openssl
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+- name: 安装 EPEL（RedHat 系）
+  ansible.builtin.yum:
+    name: epel-release
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: 安装 Docker（如需要）
+  include_tasks: install_docker.yml
+  when: install_method in ["docker", "docker_compose", "k8s_yaml", "k8s_helm"]

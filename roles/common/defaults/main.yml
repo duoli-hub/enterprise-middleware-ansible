@@ -1,0 +1,28 @@
+---
+# roles/common/defaults/main.yml
+# 公共角色的默认变量，优先级最低，可被 group_vars/host_vars 覆盖
+
+# 是否启用系统调优（内核参数、limits）
+system_tuning_enabled: true
+
+# 防火墙配置
+enable_firewall: true
+disable_firewall_management: false
+firewall_allowed_ports:
+  - 22
+
+# SELinux 状态（RedHat 系）
+enable_selinux: false
+
+# 中间件运行用户
+middleware_user: "midware"
+middleware_group: "midware"
+
+# 基础安装路径
+base_install_dir: "/opt"
+base_data_dir: "/data"
+base_log_dir: "/var/log"
+
+# 默认安装方式（如果没有从全局变量传入）
+install_method: "binary"
+install_mode: "online"

@@ -1,0 +1,21 @@
+---
+# roles/kafka/tasks/zookeeper_cluster.yml
+# Kafka ZooKeeper 集群模式配置
+# 生成依赖 ZooKeeper 的 server.properties 文件，并确保 Kafka 以 ZooKeeper 模式启动
+
+- name: 生成 server.properties（ZooKeeper 模式）
+  ansible.builtin.template:
+    src: server.properties.j2
+    dest: "{{ kafka_install_dir | default(base_install_dir + '/kafka') }}/config/server.properties"
+    owner: "{{ kafka_user | default(middleware_user) }}"
+    group: "{{ kafka_group | default(middleware_group) }}"
+    mode: "0640"
+  notify: restart kafka
+
+- name: 启动 ZooKeeper 模式 Kafka 系统服务
+  ansible.builtin.systemd:
+    name: kafka
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: kafka_install_method == 'binary'

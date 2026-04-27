@@ -1,0 +1,85 @@
+---
+# roles/tomcat/tasks/binary_install.yml
+# Apache Tomcat 二进制安装：下载 tar.gz → 解压 → 配置目录环境 → 设置 systemd 服务
+
+- name: 设置 Tomcat 归档文件名
+  ansible.builtin.set_fact:
+    tomcat_basename: "apache-tomcat-{{ tomcat_version }}"
+
+- name: 下载 Tomcat 二进制包（在线模式）
+  ansible.builtin.get_url:
+    url: "{{ tomcat_download_url | default('https://downloads.apache.org/tomcat/tomcat-' + tomcat_version.split('.')[0] + '/v' + tomcat_version + '/bin/' + tomcat_basename + '.tar.gz') }}"
+    dest: "/tmp/{{ tomcat_basename }}.tar.gz"
+    mode: "0644"
+  when: install_mode == "online"
+
+- name: 复制本地离线包（离线模式）
+  ansible.builtin.copy:
+    src: "{{ tomcat_offline_package | default(playbook_dir + '/files/' + tomcat_basename + '.tar.gz') }}"
+    dest: "/tmp/{{ tomcat_basename }}.tar.gz"
+    mode: "0644"
+  when: install_mode == "offline"
+
+- name: 创建 Tomcat 安装目录
+  ansible.builtin.file:
+    path: "{{ tomcat_install_dir }}"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0755"
+
+- name: 解压 Tomcat 二进制包
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ tomcat_basename }}.tar.gz"
+    dest: "{{ tomcat_install_dir }}"
+    remote_src: true
+    creates: "{{ tomcat_install_dir }}/bin/catalina.sh"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    extra_opts:
+      - --strip-components=1
+  notify: restart tomcat
+
+- name: 创建 Tomcat webapps 目录
+  ansible.builtin.file:
+    path: "{{ tomcat_webapps_dir }}"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0755"
+
+- name: 创建 Tomcat 日志目录
+  ansible.builtin.file:
+    path: "{{ tomcat_log_dir }}"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0755"
+
+- name: 将 Tomcat 二进制路径加入系统 PATH
+  ansible.builtin.copy:
+    dest: /etc/profile.d/tomcat.sh
+    content: |
+      export PATH=$PATH:{{ tomcat_install_dir }}/bin
+    mode: "0644"
+  when: tomcat_update_path | default(true) | bool
+
+- name: 生成 setenv.sh 脚本（JVM 参数）
+  ansible.builtin.template:
+    src: setenv.sh.j2
+    dest: "{{ tomcat_install_dir }}/bin/setenv.sh"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0750"
+  notify: restart tomcat
+
+- name: 生成 Tomcat systemd 服务文件
+  ansible.builtin.template:
+    src: tomcat.service.j2
+    dest: /etc/systemd/system/tomcat.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart tomcat

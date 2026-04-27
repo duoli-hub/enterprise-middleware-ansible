@@ -1,0 +1,100 @@
+---
+# roles/tomcat/defaults/main.yml
+# Apache Tomcat 角色默认变量（最低优先级，可被 group_vars / host_vars 覆盖）
+
+# --- 安装与架构 ---
+tomcat_install_method: "binary"
+tomcat_architecture: "standalone"
+tomcat_version: "9.0.87"
+
+# --- 端口 ---
+tomcat_http_port: 8080
+tomcat_shutdown_port: 8005
+tomcat_ajp_port: 8009
+tomcat_ajp_enabled: false
+
+# --- 路径 ---
+tomcat_install_dir: "{{ base_install_dir }}/tomcat"
+tomcat_webapps_dir: "{{ base_data_dir }}/tomcat/webapps"
+tomcat_log_dir: "{{ base_log_dir }}/tomcat"
+
+# --- 用户与组 ---
+tomcat_user: "{{ middleware_user }}"
+tomcat_group: "{{ middleware_group }}"
+
+# --- 实例标识 ---
+tomcat_instance_id: 1
+
+# --- JVM 配置 ---
+tomcat_java_home: "/usr/lib/jvm/java-11"
+tomcat_xms: "2G"
+tomcat_xmx: "2G"
+tomcat_new_size: "512m"
+tomcat_max_new_size: "512m"
+tomcat_metaspace_size: "256m"
+tomcat_max_metaspace_size: "256m"
+tomcat_dump_on_oom: true
+tomcat_heap_dump_path: ""
+tomcat_jmx_enabled: false
+tomcat_jmx_port: 1099
+
+# --- GC 选项 ---
+tomcat_gc_algo: "G1GC"
+tomcat_gc_options: ""
+
+# --- 连接器调优 ---
+tomcat_connector_max_threads: 500
+tomcat_connector_min_spare_threads: 50
+tomcat_connector_max_connections: 2000
+tomcat_connector_accept_count: 200
+tomcat_connector_connection_timeout: 20000
+tomcat_connector_keep_alive_timeout: 10000
+tomcat_connector_max_keep_alive_requests: 100
+
+# --- 请求限制 ---
+tomcat_max_http_request_header_size: 65536
+tomcat_max_swallow_size: "16m"
+
+# --- 压缩 ---
+tomcat_compression: "on"
+tomcat_compressible_mime_types: "text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json"
+tomcat_compression_min_size: 2048
+
+# --- 会话与 Cookie ---
+tomcat_session_timeout: 30
+tomcat_cookie_http_only: true
+tomcat_cookie_secure: false
+
+# --- 访问日志 ---
+tomcat_access_log_enabled: true
+tomcat_access_log_pattern: '%h %l %u %t "%r" %s %b %D'
+tomcat_access_log_directory: ""
+
+# --- 集群 ---
+tomcat_cluster_enabled: false
+tomcat_cluster_membership_address: "228.0.0.4"
+tomcat_cluster_membership_port: 45564
+tomcat_cluster_receiver_address: ""
+tomcat_cluster_receiver_port: 4000
+tomcat_cluster_session_replication: true
+tomcat_cluster_channel_send_options: "6"
+
+# --- 远程 IP 阀 ---
+tomcat_remote_ip_valve_enabled: false
+tomcat_remote_ip_proxies: "10.0.0.0/8"
+
+# --- 应用部署 ---
+# tomcat_deploy_war_url: ""
+# tomcat_deploy_context_path: ""
+
+# --- 安全 ---
+tomcat_shutdown_password: "SHUTDOWN"
+tomcat_ajp_secret: ""
+
+# --- Docker 镜像 ---
+tomcat_docker_image: "tomcat:{{ tomcat_version }}-jdk11-temurin"
+tomcat_docker_force_pull: false
+
+# --- 功能开关 ---
+tomcat_include_system_tuning: true
+tomcat_update_path: true

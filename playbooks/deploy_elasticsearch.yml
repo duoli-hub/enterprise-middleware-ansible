@@ -1,0 +1,20 @@
+---
+# ============================================================
+# Elasticsearch 部署 Playbook
+# 支持 standalone、cluster 架构
+# 执行: ./deploy.sh elasticsearch [--arch <架构>] [--method <安装方式>]
+# ============================================================
+
+- name: 部署 Elasticsearch 节点
+  hosts: elasticsearch
+  become: true
+  gather_facts: true
+  vars:
+    elasticsearch_architecture: "{{ elasticsearch_architecture | default('cluster') }}"
+    elasticsearch_install_method: "{{ elasticsearch_install_method | default(install_method) }}"
+  roles:
+    - role: elasticsearch
+  tags:
+    - elasticsearch
+    - install
+    - config

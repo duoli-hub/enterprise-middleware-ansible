@@ -1,0 +1,37 @@
+---
+# ============================================================
+# MySQL 部署 Playbook
+# 支持 standalone、master_slave、MHA 高可用架构
+# 执行: ./deploy.sh mysql [--arch <架构>] [--method <安装方式>]
+# ============================================================
+
+- name: 部署 MySQL 主库及从库
+  hosts: mysql_master:mysql_slave
+  become: true
+  gather_facts: true
+  vars:
+    mysql_architecture: "{{ mysql_architecture | default('master_slave') }}"
+    mysql_install_method: "{{ mysql_install_method | default(install_method) }}"
+  roles:
+    - role: mysql
+  tags:
+    - mysql
+    - install
+    - config
+
+- name: 部署 MHA Manager（可选）
+  hosts: mysql_mha_manager
+  become: true
+  gather_facts: true
+  vars:
+    mysql_architecture: "{{ mysql_architecture | default('master_slave') }}"
+  tasks:
+    - name: 包含 MHA Manager 部署任务
+      include_role:
+        name: mysql
+        tasks_from: mha.yml
+  when: mysql_architecture == 'mha'
+  tags:
+    - mysql
+    - mha
+    - manager

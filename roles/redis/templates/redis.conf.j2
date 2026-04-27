@@ -1,0 +1,73 @@
+# {{ ansible_managed }}
+# Redis 配置文件 - 由 Ansible 管理
+# 架构: {{ redis_architecture }} | 安装方式: {{ redis_install_method }}
+
+# ===== 网络 =====
+bind 0.0.0.0
+protected-mode yes
+port {{ redis_port }}
+tcp-backlog {{ redis_tcp_backlog | default(511) }}
+timeout {{ redis_timeout | default(0) }}
+tcp-keepalive {{ redis_tcp_keepalive | default(300) }}
+
+# ===== 进程 =====
+daemonize no
+supervised systemd
+pidfile /var/run/redis/redis.pid
+loglevel notice
+logfile {{ redis_log_dir | default(base_log_dir + '/redis') }}/redis.log
+
+# ===== 数据库 =====
+databases 16
+always-show-logo no
+
+# ===== 持久化 (RDB) =====
+save {% for line in redis_save %}{{ line }}
+{% endfor %}
+stop-writes-on-bgsave-error yes
+rdbcompression yes
+rdbchecksum yes
+dbfilename dump.rdb
+dir {{ redis_data_dir | default(base_data_dir + '/redis') }}
+
+# ===== 持久化 (AOF) =====
+appendonly {{ redis_appendonly | default('no') }}
+appendfsync {{ redis_appendfsync | default('everysec') }}
+
+# ===== 安全 =====
+requirepass {{ redis_password | default('') }}
+masterauth {{ redis_password | default('') }}
+
+# ===== 内存管理 =====
+maxmemory {{ redis_maxmemory | default('0') }}
+maxmemory-policy {{ redis_maxmemory_policy | default('noeviction') }}
+
+# ===== 慢查询日志 =====
+slowlog-log-slower-than {{ redis_slowlog_log_slower_than | default(10000) }}
+slowlog-max-len {{ redis_slowlog_max_len | default(128) }}
+
+# ===== 客户端限制 =====
+maxclients {{ redis_maxclients | default(10000) }}
+
+# ===== 复制 (master_slave / sentinel 架构) =====
+{% if redis_architecture in ['master_slave', 'sentinel'] %}
+  {% if 'redis_master' in group_names %}
+# 本节点作为主节点
+  {% else %}
+replicaof {{ hostvars[groups['redis_master'][0]]['ansible_host'] }} {{ redis_port }}
+  {% endif %}
+replica-read-only yes
+replica-serve-stale-data yes
+replica-priority 100
+min-replicas-to-write {{ redis_min_replicas_to_write | default(1) }}
+min-replicas-max-lag {{ redis_min_replicas_max_lag | default(10) }}
+{% endif %}
+
+# ===== Redis Cluster 集群模式 =====
+{% if redis_architecture == 'cluster' %}
+cluster-enabled yes
+cluster-config-file nodes.conf
+cluster-node-timeout 15000
+cluster-require-full-coverage yes
+cluster-migration-barrier 1
+{% endif %}
