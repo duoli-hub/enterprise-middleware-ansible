@@ -1,0 +1,81 @@
+# ============================================================
+# 敏感及加密文件
+# ============================================================
+# Ansible Vault 密码文件（绝对禁止提交）
+.vault_pass.txt
+.vault_pass
+*.vault_pass
+vault_pass.txt
+
+# 可能存放密钥的环境文件
+.env
+.env.*
+!.env.example
+
+# 加密后的主机变量（可选，若使用 encrypt_string 则建议一起忽略）
+# inventory/**/host_vars/*.yml
+
+# ============================================================
+# Ansible 运行时文件
+# ============================================================
+# 操作日志
+ansible.log
+*.ansible.log
+
+# 任务重试文件（Ansible 2.0 起已默认禁用，保留兼容）
+*.retry
+
+# 事实缓存
+fact_cache/
+
+# ============================================================
+# 临时及生成文件
+# ============================================================
+# 各种临时文件
+*~
+*.swp
+*.swo
+*.bak
+*.orig
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Python 虚拟环境
+venv/
+.venv/
+env/
+.env/
+__pycache__/
+*.pyc
+*.pyo
+
+# Ansible Galaxy 安装的集合（建议通过 requirements.yml 管理）
+collections/
+ansible_collections/
+
+# ============================================================
+# 项目特定忽略
+# ============================================================
+# 离线安装包目录（通常很大，或由 CI 单独管理）
+files/*
+!files/.gitkeep
+
+# 测试及开发配置
+tests/
+test/
+.vagrant/
+Vagrantfile
+
+# IDE 配置
+.idea/
+.vscode/
+*.iml
+.project
+.classpath
+.settings/
+
+# 操作系统文件
+*.log
+*.pid
+*.out
