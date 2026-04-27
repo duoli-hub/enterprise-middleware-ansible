@@ -36,6 +36,11 @@
     - packages
     - dependencies
 
+- name: 确保中间件运行组存在
+  ansible.builtin.group:
+    name: "{{ middleware_group }}"
+    state: present
+
 - name: 确保中间件运行用户存在
   ansible.builtin.user:
     name: "{{ middleware_user }}"
@@ -44,6 +49,3 @@
     shell: /usr/sbin/nologin
     create_home: false
     state: present
-  when: install_method not in ["docker", "docker_compose", "k8s_yaml", "k8s_helm"]
-  tags:
-    - user

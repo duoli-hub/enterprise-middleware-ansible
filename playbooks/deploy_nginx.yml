@@ -9,9 +9,9 @@
   hosts: nginx
   become: true
   gather_facts: true
-  vars:
-    nginx_architecture: "{{ nginx_architecture | default('standalone') }}"
-    nginx_install_method: "{{ nginx_install_method | default(install_method) }}"
+#  vars:
+#    nginx_architecture: "{{ nginx_architecture | default('standalone') }}"
+#    nginx_install_method: "{{ nginx_install_method | default(install_method) }}"
   roles:
     - role: nginx
   tags:

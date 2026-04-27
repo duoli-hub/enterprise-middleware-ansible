@@ -20,7 +20,7 @@ nginx_listen_ssl_port: 443
 # --- 路径 ---
 nginx_conf_dir: "/etc/nginx"
 nginx_log_dir: "{{ base_log_dir }}/nginx"
-nginx_pid_dir: "/var/run/nginx"
+nginx_pid_dir: "/run"
 nginx_web_root: "{{ base_data_dir }}/nginx/html"
 
 # --- 运行用户 ---
@@ -80,7 +80,7 @@ nginx_http:
 
 # --- Gzip 压缩 ---
 nginx_gzip:
-  enabled: true
+  enabled: "on"
   min_length: 1000
   comp_level: 5
   types: "text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript"

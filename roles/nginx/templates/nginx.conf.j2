@@ -6,7 +6,7 @@ user  {{ nginx_user }};
 worker_processes  {{ nginx_worker_processes | default('auto') }};
 
 error_log  {{ nginx_log_dir }}/error.log {{ nginx_error_log_level | default('warn') }};
-pid        {{ nginx_pid_dir | default('/var/run/nginx') }}/nginx.pid;
+pid        {{ nginx_pid_dir | default('/run') }}/nginx.pid;
 
 events {
     worker_connections  {{ nginx_worker_connections | default(65535) }};

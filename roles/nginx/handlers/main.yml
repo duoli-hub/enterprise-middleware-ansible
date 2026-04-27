@@ -1,0 +1,15 @@
+---
+# roles/nginx/handlers/main.yml
+
+- name: restart nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: restarted
+    daemon_reload: true
+  when: nginx_install_method in ['package', 'compile']
+
+- name: restart docker nginx
+  community.docker.docker_container:
+    name: nginx
+    state: restarted
+  when: nginx_install_method == 'docker'

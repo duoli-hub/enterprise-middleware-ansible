@@ -1,0 +1,20 @@
+---
+# roles/common/handlers/main.yml
+
+- name: reload sysctl
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/99-middleware.conf
+  changed_when: false
+
+- name: reboot required for SELinux disable
+  ansible.builtin.debug:
+    msg: |
+      SELinux 已修改为 disabled，但当前处于 permissive 模式（setenforce 0）。
+      需要**重启主机**才能完全禁用。
+      重启命令：sudo reboot
+
+- name: reboot required for SELinux enable
+  ansible.builtin.debug:
+    msg: |
+      SELinux 已修改为 enforcing，但当前可能仍为 permissive。
+      需要**重启主机**才能完全生效。
+      重启命令：sudo reboot

@@ -16,45 +16,36 @@
   changed_when: false
   when: ansible_virtualization_type != 'docker'   # 容器内执行 sysctl 可能被拒绝
 
-- name: 禁用透明大页（运行时生效）
-  ansible.builtin.shell: |
-    if [ -f /sys/kernel/mm/transparent_hugepage/enabled ]; then
-      echo never > /sys/kernel/mm/transparent_hugepage/enabled
-    fi
-    if [ -f /sys/kernel/mm/transparent_hugepage/defrag ]; then
-      echo never > /sys/kernel/mm/transparent_hugepage/defrag
-    fi
-  changed_when: false
+- name: 部署并启动透明大页禁用服务（使用 shell 确保生效）
+  block:
+    - name: 写入 disable-thp.service 文件
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/disable-thp.service
+        content: |
+          [Unit]
+          Description=Disable Transparent Huge Pages (THP)
+          After=sysinit.target local-fs.target
+          Before=basic.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/bin/sh -c "echo never > /sys/kernel/mm/transparent_hugepage/enabled && echo never > /sys/kernel/mm/transparent_hugepage/defrag"
+
+          [Install]
+          WantedBy=basic.target
+        owner: root
+        group: root
+        mode: "0644"
+      register: thp_file
+
+    - name: 重载 systemd 并启动服务
+      ansible.builtin.shell: |
+        systemctl daemon-reload
+        systemctl enable disable-thp
+        systemctl start disable-thp || true
+      when: thp_file is changed
+      register: thp_start
+      changed_when: thp_start.rc == 0
   when:
     - ansible_virtualization_type != 'docker'
-    - system_tuning.sysctl['vm.zone_reclaim_mode'] is defined   # 确认需要禁用 THP 的场景
-
-- name: 创建透明大页禁用 systemd 服务（持久化）
-  ansible.builtin.copy:
-    dest: /etc/systemd/system/disable-thp.service
-    content: |
-      [Unit]
-      Description=Disable Transparent Huge Pages (THP)
-      After=sysinit.target local-fs.target
-      Before=basic.target
-
-      [Service]
-      Type=oneshot
-      ExecStart=/bin/sh -c "echo never > /sys/kernel/mm/transparent_hugepage/enabled && echo never > /sys/kernel/mm/transparent_hugepage/defrag"
-
-      [Install]
-      WantedBy=basic.target
-    owner: root
-    group: root
-    mode: "0644"
-  register: thp_service_file
-
-- name: 启用透明大页禁用服务
-  ansible.builtin.systemd:
-    name: disable-thp
-    daemon_reload: yes
-    enabled: yes
-    state: started
-  when:
-    - thp_service_file is changed
     - ansible_service_mgr == 'systemd'

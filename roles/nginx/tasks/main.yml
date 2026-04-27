@@ -4,11 +4,21 @@
 # 支持的安装方式: package, compile, docker
 # 支持的架构: standalone, load_balancer, keepalived_ha
 
-- name: 设置默认变量（避免未定义错误）
+#- name: 设置默认变量（避免未定义错误）
+#  ansible.builtin.set_fact:
+#    nginx_install_method: "{{ nginx_install_method | default(install_method) }}"
+#    nginx_architecture: "{{ nginx_architecture | default('standalone') }}"
+#  tags: always
+
+- name: 设置 nginx_install_method 默认值
   ansible.builtin.set_fact:
-    nginx_install_method: "{{ nginx_install_method | default(install_method) }}"
-    nginx_architecture: "{{ nginx_architecture | default('standalone') }}"
-  tags: always
+    nginx_install_method: "{{ install_method }}"
+  when: nginx_install_method is not defined
+
+- name: 设置 nginx_architecture 默认值
+  ansible.builtin.set_fact:
+    nginx_architecture: "standalone"
+  when: nginx_architecture is not defined
 
 - name: 包含系统调优角色
   ansible.builtin.include_role:

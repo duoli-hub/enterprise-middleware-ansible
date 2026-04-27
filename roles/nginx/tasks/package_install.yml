@@ -40,6 +40,25 @@
     group: "{{ nginx_group }}"
     mode: "0755"
 
+- name: 确保 Nginx PID 目录存在
+  ansible.builtin.file:
+    path: "{{ nginx_pid_dir | default('/run') }}"
+    state: directory
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+    mode: "0755"
+
+- name: 确保 /run/nginx 目录 SELinux 上下文正确
+  ansible.builtin.file:
+    path: /run/nginx
+    state: directory
+    setype: httpd_var_run_t
+    seuser: system_u
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+    mode: "0755"
+  when: ansible_selinux.status == 'enabled'
+
 - name: 生成 Nginx 主配置文件
   ansible.builtin.template:
     src: nginx.conf.j2
@@ -66,8 +85,35 @@
   when: nginx_create_default_conf | default(true) | bool
 
 - name: 启动并启用 Nginx 服务
-  ansible.builtin.systemd:
-    name: nginx
-    state: started
-    enabled: true
-    daemon_reload: true
+  nsible.builtin.systemd:
+   name: nginx
+   state: started
+   enabled: true
+   daemon_reload: true
+
+# - name: 确保 systemd 服务文件存在
+#   ansible.builtin.stat:
+#     path: /usr/lib/systemd/system/nginx.service
+#   register: nginx_service_file
+
+# - name: 若服务文件缺失则重新安装 Nginx
+#   ansible.builtin.yum:
+#     name: nginx
+#     state: reinstalled
+#   when:
+#     - not nginx_service_file.stat.exists
+#     - ansible_os_family == "RedHat"
+
+# - name: 重新加载 systemd
+#   ansible.builtin.systemd:
+#     daemon_reload: true
+
+# - name: 启动并启用 Nginx 服务
+#   ansible.builtin.systemd:
+#     name: nginx
+#     state: started
+#     enabled: true
+#   register: nginx_started
+#   retries: 3
+#   delay: 5
+#   until: nginx_started is success
