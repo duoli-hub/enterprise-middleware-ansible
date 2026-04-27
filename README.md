@@ -1,7 +1,6 @@
-```markdown
 # 🚀 Enterprise Middleware Ansible
 
-**金融级企业中间件一键部署平台** —— 基于 Ansible 的多维可配置部署方案，统一管理 Apache Kafka、RocketMQ、RabbitMQ、Redis、ZooKeeper、Tomcat、Nginx、Elasticsearch、MySQL 等九大核心中间件的生命周期。
+**中间件一键部署平台** —— 基于 Ansible 的多维可配置部署方案，统一管理 Apache Kafka、RocketMQ、RabbitMQ、Redis、ZooKeeper、Tomcat、Nginx、Elasticsearch、MySQL 等九大核心中间件的生命周期。
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Ansible](https://img.shields.io/badge/ansible-9%2B-red?logo=ansible)](https://docs.ansible.com/)
@@ -23,7 +22,7 @@
 
 ## 📁 项目目录结构
 
-```
+```markdown
 enterprise-middleware-ansible/
 ├── ansible.cfg                          # Ansible 全局配置（并发、SSH 优化等）
 ├── deploy.sh                            # 统一部署入口脚本
@@ -75,8 +74,6 @@ enterprise-middleware-ansible/
 └── docs/                                # 文档
 ```
 
----
-
 ## 🚀 快速开始
 
 ### 1. 环境准备
@@ -86,6 +83,7 @@ enterprise-middleware-ansible/
   pip install ansible jmespath passlib
   ansible-galaxy collection install community.general community.docker kubernetes.core
   ```
+
 - **目标主机**：与 Ansible 控制节点网络互通，已配置好 IP 和 SSH 密码（首次可使用 `deploy.sh ssh` 配置免密）。
 
 ### 2. 配置主机清单
@@ -161,13 +159,13 @@ ansible-playbook -i inventory/production/hosts.ini playbooks/deploy_redis.yml \
 
 **命令**
 
-| 命令     | 说明                                 |
-|----------|--------------------------------------|
-| `deploy` | 执行部署（默认）                     |
-| `test`   | 测试目标主机连通性（ansible ping）   |
-| `info`   | 显示当前配置信息                     |
-| `dry-run`| 试运行（--check --diff）             |
-| `ssh`    | 配置所有主机 SSH 免密登录            |
+| 命令      | 说明                               |
+| --------- | ---------------------------------- |
+| `deploy`  | 执行部署（默认）                   |
+| `test`    | 测试目标主机连通性（ansible ping） |
+| `info`    | 显示当前配置信息                   |
+| `dry-run` | 试运行（--check --diff）           |
+| `ssh`     | 配置所有主机 SSH 免密登录          |
 
 **中间件名称**：`redis`、`mysql`、`kafka`、`rocketmq`、`rabbitmq`、`zookeeper`、`nginx`、`tomcat`、`elasticsearch`、`all`
 
@@ -202,17 +200,17 @@ ansible-playbook -i inventory/production/hosts.ini playbooks/deploy_redis.yml \
 
 ## 🧩 中间件覆盖矩阵
 
-| 中间件        | 单机 | 主备 | 集群/高可用                   | 二进制 | 包管理 | 编译 | Docker | Docker Compose | K8s YAML | Helm Chart |
-|---------------|------|------|-------------------------------|--------|--------|------|--------|----------------|----------|------------|
-| Redis         | ✅   | ✅   | ✅ Sentinel / Cluster         | ✅     | ✅     | ✅   | ✅     | ✅             | ✅       | ✅         |
-| MySQL         | ✅   | ✅   | ✅ MHA / MGR                  | ✅     | ✅     | ❌   | ✅     | ❌             | ❌       | ❌         |
-| Kafka         | ✅   | ❌   | ✅ KRaft / ZooKeeper          | ✅     | ❌     | ❌   | ✅     | ✅             | ✅       | ❌         |
-| RocketMQ      | ✅   | ✅   | ✅ 双主双从 / DLedger         | ✅     | ❌     | ❌   | ❌     | ✅             | ❌       | ❌         |
-| RabbitMQ      | ✅   | ❌   | ✅ 多节点                     | ❌     | ✅     | ❌   | ✅     | ❌             | ❌       | ❌         |
-| ZooKeeper     | ✅   | ❌   | ✅ 3/5 节点集群               | ✅     | ❌     | ❌   | ✅     | ❌             | ❌       | ❌         |
-| Nginx         | ✅   | ✅   | ✅ Keepalived + 负载均衡      | ❌     | ✅     | ✅   | ✅     | ❌             | ❌       | ❌         |
-| Tomcat        | ✅   | ❌   | ✅ 多实例 + Nginx 反代        | ✅     | ❌     | ❌   | ✅     | ❌             | ❌       | ❌         |
-| Elasticsearch | ✅   | ❌   | ✅ 3+ 节点集群                | ❌     | ✅     | ❌   | ✅     | ❌             | ✅       | ✅         |
+| 中间件        | 单机 | 主备 | 集群/高可用             | 二进制 | 包管理 | 编译 | Docker | Docker Compose | K8s YAML | Helm Chart |
+| ------------- | ---- | ---- | ----------------------- | ------ | ------ | ---- | ------ | -------------- | -------- | ---------- |
+| Redis         | ✅    | ✅    | ✅ Sentinel / Cluster    | ✅      | ✅      | ✅    | ✅      | ✅              | ✅        | ✅          |
+| MySQL         | ✅    | ✅    | ✅ MHA / MGR             | ✅      | ✅      | ❌    | ✅      | ❌              | ❌        | ❌          |
+| Kafka         | ✅    | ❌    | ✅ KRaft / ZooKeeper     | ✅      | ❌      | ❌    | ✅      | ✅              | ✅        | ❌          |
+| RocketMQ      | ✅    | ✅    | ✅ 双主双从 / DLedger    | ✅      | ❌      | ❌    | ❌      | ✅              | ❌        | ❌          |
+| RabbitMQ      | ✅    | ❌    | ✅ 多节点                | ❌      | ✅      | ❌    | ✅      | ❌              | ❌        | ❌          |
+| ZooKeeper     | ✅    | ❌    | ✅ 3/5 节点集群          | ✅      | ❌      | ❌    | ✅      | ❌              | ❌        | ❌          |
+| Nginx         | ✅    | ✅    | ✅ Keepalived + 负载均衡 | ❌      | ✅      | ✅    | ✅      | ❌              | ❌        | ❌          |
+| Tomcat        | ✅    | ❌    | ✅ 多实例 + Nginx 反代   | ✅      | ❌      | ❌    | ✅      | ❌              | ❌        | ❌          |
+| Elasticsearch | ✅    | ❌    | ✅ 3+ 节点集群           | ❌      | ✅      | ❌    | ✅      | ❌              | ✅        | ✅          |
 
 ---
 
@@ -270,7 +268,7 @@ A：Ansible 官方不支持 Windows 作为控制节点，推荐使用 WSL2、Lin
 
 ## 🙋 贡献与支持
 
-欢迎通过 Issue 或 Pull Request 提交改进建议。本方案专为金融企业生产环境设计，你可根据实际需求自由裁剪和扩展各中间件角色。
+欢迎通过 Issue 或 Pull Request 提交改进建议。你可根据实际需求自由裁剪和扩展各中间件角色。
 
 > **提示**：文中涉及的项目仓库地址为方案示例，实际使用时请按照你的私有仓库路径进行配置。
-```
+
