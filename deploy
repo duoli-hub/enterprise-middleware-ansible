@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# deploy.sh — Enterprise Middleware Ansible 统一部署入口
+# 用法: ./deploy.sh [中间件] [选项...]
+# 示例: ./deploy.sh redis --arch sentinel --method binary --mode offline
+
+set -euo pipefail
+
+# ============================================================
+# 默认值（可被环境变量、配置文件或命令行覆盖）
+# ============================================================
+INVENTORY="${INVENTORY:-inventory/production/hosts.ini}"
+EXTRA_VARS="${EXTRA_VARS:-}"
+PLAYBOOK_DIR="playbooks"
+VAULT_ID="${VAULT_ID:-}"
+ASK_VAULT_PASS="--ask-vault-pass"
+TAGS="${TAGS:-}"
+
+# 支持从 .env 文件加载环境变量
+if [[ -f .env ]]; then
+  source .env
+fi
+
+# ============================================================
+# 帮助信息
+# ============================================================
+show_help() {
+  cat <<EOF
+用法: $0 <中间件> [命令] [选项...]
+       $0 [全局选项] <中间件> [命令] [选项...]
+
+统一部署入口，封装 Ansible Playbook 调用，支持多种中间件一键部署。
+
+中间件列表:
+  redis           Redis 缓存/消息队列
+  mysql           MySQL 数据库
+  kafka           Apache Kafka 消息队列
+  rocketmq        Apache RocketMQ 消息队列
+  rabbitmq        RabbitMQ 消息队列
+  zookeeper       Apache ZooKeeper 协调服务
+  nginx           Nginx Web/反向代理服务器
+  tomcat          Apache Tomcat 应用服务器
+  elasticsearch   Elasticsearch 搜索引擎
+  all             一键部署全部中间件（按依赖顺序）
+
+命令:
+  deploy          执行部署（默认）
+  test            测试连通性（ping）
+  info            显示当前配置信息
+  dry-run         试运行（--check --diff）
+
+选项:
+  --arch, -a <模式>          架构模式：standalone|master_slave|sentinel|cluster
+                             具体支持取决于中间件，默认见各中间件配置
+  --method, -i <方式>        安装方式：binary|package|compile|docker|docker_compose|
+                                       k8s_yaml|k8s_helm
+                             默认使用全局配置
+  --mode, -o <模式>          安装模式：online|offline，默认 online
+  --version, -v <版本>       指定中间件版本（覆盖变量文件）
+  --inventory <清单文件>     指定 Ansible 主机清单（默认 inventory/production/hosts.ini）
+  --limit <主机/组>          限制目标范围（Ansible --limit）
+  --tags <标签>              仅执行特定标签任务
+  --skip-tags <标签>         跳过特定标签
+  --vault-id <id>            Ansible Vault ID
+  --no-vault                 禁用 Vault 密码询问（公共变量场景）
+  --extra-vars, -e <key=value>  传入额外变量（可多次使用）
+  --check, -C                试运行（不实际变更）
+  --diff, -D                 显示变更差异
+  --help, -h                 显示本帮助
+
+环境变量:
+  INVENTORY           默认主机清单路径
+  EXTRA_VARS          默认额外变量（空格分隔）
+  TAGS                默认标签
+  ANSIBLE_ARGS        传递给 ansible-playbook 的额外参数
+
+示例:
+  $0 redis --arch sentinel --method binary --mode offline
+  $0 kafka --method docker_compose -v 3.7.0
+  $0 elasticsearch --method k8s_helm --tags install,config
+  $0 all --check
+  $0 mysql test --limit mysql-slave-01
+  $0 nginx info
+EOF
+}
+
+# ============================================================
+# 显示当前配置信息
+# ============================================================
+show_info() {
+  local middleware=$1
+  echo "中间件: $middleware"
+  echo "主机清单: $INVENTORY"
+  echo "Playbook: $PLAYBOOK_DIR/deploy_$middleware.yml"
+  echo "Ansible 额外变量: $EXTRA_VARS"
+  echo "Tags: ${TAGS:-无}"
+  echo "Vault: ${ASK_VAULT_PASS}"
+  echo "架构: ${ARCH:-默认配置}"
+  echo "安装方式: ${METHOD:-默认配置}"
+  echo "安装模式: ${MODE:-online}"
+}
+
+# ============================================================
+# 参数解析
+# ============================================================
+COMMAND="deploy"
+ARCH=""
+METHOD=""
+MODE=""
+VERSION=""
+LIMIT=""
+SKIP_TAGS=""
+CHECK=""
+DIFF=""
+
+# 支持将中间件作为第一个位置参数，其余为选项
+if [[ $# -eq 0 ]]; then
+  show_help
+  exit 0
+fi
+
+# 第一个参数如果不是以 - 开头，则视为中间件名
+MIDDLEWARE=""
+if [[ ! "$1" =~ ^- ]]; then
+  MIDDLEWARE="$1"
+  shift
+fi
+
+# 剩余参数可能包含命令（deploy/test/info/dry-run）
+case "${1:-}" in
+  deploy|test|info|dry-run)
+    COMMAND="$1"
+    shift
+    ;;
+esac
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --arch|-a)
+      ARCH="$2"; shift 2;;
+    --method|-i)
+      METHOD="$2"; shift 2;;
+    --mode|-o)
+      MODE="$2"; shift 2;;
+    --version|-v)
+      VERSION="$2"; shift 2;;
+    --inventory)
+      INVENTORY="$2"; shift 2;;
+    --limit)
+      LIMIT="$2"; shift 2;;
+    --tags)
+      TAGS="$2"; shift 2;;
+    --skip-tags)
+      SKIP_TAGS="$2"; shift 2;;
+    --vault-id)
+      VAULT_ID="--vault-id $2"; shift 2;;
+    --no-vault)
+      ASK_VAULT_PASS=""; shift;;
+    --extra-vars|-e)
+      # 支持多次传递
+      EXTRA_VARS="$EXTRA_VARS -e \"$2\""; shift 2;;
+    --check|-C)
+      CHECK="--check"; shift;;
+    --diff|-D)
+      DIFF="--diff"; shift;;
+    --help|-h)
+      show_help; exit 0;;
+    *)
+      echo "未知选项: $1" >&2
+      show_help
+      exit 1;;
+  esac
+done
+
+# 必须指定中间件
+if [[ -z "$MIDDLEWARE" ]]; then
+  echo "错误: 必须指定一个中间件，例如 redis、mysql 或 all" >&2
+  show_help
+  exit 1
+fi
+
+# 验证中间件名称
+VALID_MW=("redis" "mysql" "kafka" "rocketmq" "rabbitmq" "zookeeper" "nginx" "tomcat" "elasticsearch" "all")
+if [[ ! " ${VALID_MW[*]} " =~ " ${MIDDLEWARE} " ]]; then
+  echo "错误: 无效的中间件名称 '$MIDDLEWARE'" >&2
+  echo "可用: ${VALID_MW[*]}" >&2
+  exit 1
+fi
+
+# ============================================================
+# 处理命令
+# ============================================================
+case "$COMMAND" in
+  test)
+    echo "执行连通性测试..."
+    ansible -i "$INVENTORY" ${LIMIT:+-l "$LIMIT"} all -m ping
+    exit $?
+    ;;
+  info)
+    show_info "$MIDDLEWARE"
+    exit 0
+    ;;
+  dry-run)
+    CHECK="--check"
+    DIFF="--diff"
+    COMMAND="deploy"
+    ;;
+esac
+
+# ============================================================
+# 构建额外变量
+# ============================================================
+EXTRA_VARS_CMD=""
+if [[ -n "$ARCH" ]]; then
+  # 根据中间件名转换变量名，这里假设角色使用 <middleware>_architecture
+  var_prefix="${MIDDLEWARE//-/_}"   # 处理可能的连字符
+  EXTRA_VARS_CMD="$EXTRA_VARS_CMD -e ${var_prefix}_architecture=$ARCH"
+fi
+if [[ -n "$METHOD" ]]; then
+  var_prefix="${MIDDLEWARE//-/_}"
+  EXTRA_VARS_CMD="$EXTRA_VARS_CMD -e ${var_prefix}_install_method=$METHOD"
+fi
+if [[ -n "$MODE" ]]; then
+  EXTRA_VARS_CMD="$EXTRA_VARS_CMD -e install_mode=$MODE"
+fi
+if [[ -n "$VERSION" ]]; then
+  var_prefix="${MIDDLEWARE//-/_}"
+  EXTRA_VARS_CMD="$EXTRA_VARS_CMD -e ${var_prefix}_version=$VERSION"
+fi
+# 附加用户手动传入的 -e
+EXTRA_VARS_CMD="$EXTRA_VARS_CMD $EXTRA_VARS"
+
+# ============================================================
+# 确定 Playbook 路径
+# ============================================================
+if [[ "$MIDDLEWARE" == "all" ]]; then
+  PLAYBOOK="$PLAYBOOK_DIR/deploy_all.yml"
+else
+  PLAYBOOK="$PLAYBOOK_DIR/deploy_${MIDDLEWARE}.yml"
+fi
+
+if [[ ! -f "$PLAYBOOK" ]]; then
+  echo "错误: Playbook 文件不存在: $PLAYBOOK" >&2
+  exit 1
+fi
+
+# ============================================================
+# 执行部署
+# ============================================================
+echo "========================================"
+echo "部署中间件: $MIDDLEWARE"
+echo "主机清单: $INVENTORY"
+echo "Playbook: $PLAYBOOK"
+echo "额外变量: ${EXTRA_VARS_CMD:-无}"
+echo "========================================"
+
+# 允许通过环境变量传入额外的 Ansible 参数
+ANSIBLE_ARGS="${ANSIBLE_ARGS:-}"
+
+# 构建并运行命令
+cmd="ansible-playbook -i \"$INVENTORY\" \"$PLAYBOOK\""
+[[ -n "$LIMIT" ]] && cmd="$cmd --limit \"$LIMIT\""
+[[ -n "$TAGS" ]] && cmd="$cmd --tags \"$TAGS\""
+[[ -n "$SKIP_TAGS" ]] && cmd="$cmd --skip-tags \"$SKIP_TAGS\""
+[[ -n "$ASK_VAULT_PASS" ]] && cmd="$cmd $ASK_VAULT_PASS"
+[[ -n "$VAULT_ID" ]] && cmd="$cmd $VAULT_ID"
+[[ -n "$CHECK" ]] && cmd="$cmd $CHECK"
+[[ -n "$DIFF" ]] && cmd="$cmd $DIFF"
+[[ -n "$EXTRA_VARS_CMD" ]] && cmd="$cmd $EXTRA_VARS_CMD"
+[[ -n "$ANSIBLE_ARGS" ]] && cmd="$cmd $ANSIBLE_ARGS"
+
+echo "执行命令: $cmd"
+eval "$cmd"
