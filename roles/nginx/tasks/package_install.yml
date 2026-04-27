@@ -85,7 +85,7 @@
   when: nginx_create_default_conf | default(true) | bool
 
 - name: 启动并启用 Nginx 服务
-  nsible.builtin.systemd:
+  ansible.builtin.systemd:
    name: nginx
    state: started
    enabled: true
