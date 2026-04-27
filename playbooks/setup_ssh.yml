@@ -1,0 +1,36 @@
+---
+- name: 配置远程主机 SSH 免密登录
+  hosts: all
+  gather_facts: no          # 免密前可能无法收集系统信息
+  vars:
+    ssh_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa"
+    ssh_pubkey_file: "{{ ssh_key_file }}.pub"
+    ssh_user: "{{ ansible_user | default(lookup('env', 'USER')) }}"
+    ssh_port: 22
+    # 控制是否覆盖已有 authorized_keys 中的相同 key（合并模式）
+    exclusive: false
+  tasks:
+    - name: 确保本地密钥对存在
+      delegate_to: localhost
+      run_once: true
+      ansible.builtin.user:
+        name: "{{ lookup('env', 'USER') }}"
+        generate_ssh_key: yes
+        ssh_key_file: "{{ ssh_key_file }}"
+        ssh_key_type: rsa
+        ssh_key_bits: 4096
+
+    - name: 读取本地公钥内容
+      delegate_to: localhost
+      run_once: true
+      ansible.builtin.slurp:
+        src: "{{ ssh_pubkey_file }}"
+      register: pubkey_content
+
+    - name: 将公钥添加到远程主机 authorized_keys
+      ansible.posix.authorized_key:
+        user: "{{ ssh_user }}"
+        state: present
+        key: "{{ pubkey_content.content | b64decode }}"
+        exclusive: "{{ exclusive }}"
+        manage_dir: yes                # 自动创建 .ssh 目录并设置权限

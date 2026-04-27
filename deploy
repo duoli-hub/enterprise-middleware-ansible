@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deploy.sh — Enterprise Middleware Ansible 统一部署入口
-# 用法: ./deploy.sh [中间件] [选项...]
+# 用法: ./deploy.sh [中间件] [命令] [选项...]
 # 示例: ./deploy.sh redis --arch sentinel --method binary --mode offline
 
 set -euo pipefail
@@ -41,6 +41,7 @@ show_help() {
   tomcat          Apache Tomcat 应用服务器
   elasticsearch   Elasticsearch 搜索引擎
   all             一键部署全部中间件（按依赖顺序）
+  ssh             配置远程主机 SSH 免密登录（将本机公钥分发到目标主机）
 
 命令:
   deploy          执行部署（默认）
@@ -80,6 +81,8 @@ show_help() {
   $0 all --check
   $0 mysql test --limit mysql-slave-01
   $0 nginx info
+  $0 ssh
+  $0 ssh --limit redis_master
 EOF
 }
 
@@ -179,11 +182,16 @@ if [[ -z "$MIDDLEWARE" ]]; then
 fi
 
 # 验证中间件名称
-VALID_MW=("redis" "mysql" "kafka" "rocketmq" "rabbitmq" "zookeeper" "nginx" "tomcat" "elasticsearch" "all")
+VALID_MW=("redis" "mysql" "kafka" "rocketmq" "rabbitmq" "zookeeper" "nginx" "tomcat" "elasticsearch" "all" "ssh")
 if [[ ! " ${VALID_MW[*]} " =~ " ${MIDDLEWARE} " ]]; then
   echo "错误: 无效的中间件名称 '$MIDDLEWARE'" >&2
   echo "可用: ${VALID_MW[*]}" >&2
   exit 1
+fi
+
+# 处理 ssh 特殊命令，将 command 改为 ssh_setup
+if [[ "$MIDDLEWARE" == "ssh" ]]; then
+  COMMAND="ssh_setup"
 fi
 
 # ============================================================
@@ -211,7 +219,6 @@ esac
 # ============================================================
 EXTRA_VARS_CMD=""
 if [[ -n "$ARCH" ]]; then
-  # 根据中间件名转换变量名，这里假设角色使用 <middleware>_architecture
   var_prefix="${MIDDLEWARE//-/_}"   # 处理可能的连字符
   EXTRA_VARS_CMD="$EXTRA_VARS_CMD -e ${var_prefix}_architecture=$ARCH"
 fi
@@ -234,6 +241,8 @@ EXTRA_VARS_CMD="$EXTRA_VARS_CMD $EXTRA_VARS"
 # ============================================================
 if [[ "$MIDDLEWARE" == "all" ]]; then
   PLAYBOOK="$PLAYBOOK_DIR/deploy_all.yml"
+elif [[ "$COMMAND" == "ssh_setup" ]]; then
+  PLAYBOOK="$PLAYBOOK_DIR/setup_ssh.yml"
 else
   PLAYBOOK="$PLAYBOOK_DIR/deploy_${MIDDLEWARE}.yml"
 fi
@@ -255,6 +264,14 @@ echo "========================================"
 
 # 允许通过环境变量传入额外的 Ansible 参数
 ANSIBLE_ARGS="${ANSIBLE_ARGS:-}"
+
+# 如果命令是 ssh_setup，自动追加 --ask-pass 和可能的 --ask-become-pass
+if [[ "$COMMAND" == "ssh_setup" ]]; then
+  ANSIBLE_ARGS="$ANSIBLE_ARGS --ask-pass"
+  if [[ "$(whoami)" != "root" ]]; then
+    ANSIBLE_ARGS="$ANSIBLE_ARGS --ask-become-pass"
+  fi
+fi
 
 # 构建并运行命令
 cmd="ansible-playbook -i \"$INVENTORY\" \"$PLAYBOOK\""
